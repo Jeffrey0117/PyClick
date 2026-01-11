@@ -178,9 +178,9 @@ class TrayClicker:
         # 提示文字
         tip_frame = ttk.Frame(preview_frame)
         tip_frame.pack(fill="x", padx=5, pady=2)
-        ttk.Label(tip_frame, text="💡 提示: 選取範圍建議適中，太小容易誤判，太大會變慢。只框選有特徵的部分即可。",
+        ttk.Label(tip_frame, text="💡 選取範圍適中即可，太小易誤判、太大會變慢",
                   foreground="gray", font=("", 9)).pack(side="left")
-        ttk.Label(tip_frame, text="🖱 滾輪縮放", foreground="gray", font=("", 9)).pack(side="right")
+        ttk.Label(tip_frame, text="🖱 滾輪縮放 | 空白鍵+拖曳移動", foreground="#666", font=("", 9)).pack(side="right")
 
         self.canvas = tk.Canvas(preview_frame, bg="#333", cursor="crosshair")
         self.canvas.pack(fill="both", expand=True)
@@ -192,7 +192,16 @@ class TrayClicker:
         self.canvas.bind("<Button-4>", self.on_mouse_wheel)    # Linux 滾輪上
         self.canvas.bind("<Button-5>", self.on_mouse_wheel)    # Linux 滾輪下
 
+        # 空白鍵+拖曳移動圖片
+        self.root.bind("<KeyPress-space>", self.on_space_press)
+        self.root.bind("<KeyRelease-space>", self.on_space_release)
+        self.canvas.bind("<ButtonPress-2>", self.on_pan_start)  # 中鍵也可以
+        self.canvas.bind("<B2-Motion>", self.on_pan_move)
+
         self.zoom_level = 1.0  # 縮放等級
+        self.pan_offset = [0, 0]  # 平移偏移
+        self.space_held = False  # 空白鍵狀態
+        self.pan_start = None
 
         # === 底部狀態 ===
         bottom_frame = ttk.Frame(self.root)
@@ -206,16 +215,15 @@ class TrayClicker:
         self.template_preview = ttk.Label(bottom_frame, background="#333")
         self.template_preview.pack(side="left", padx=10)
 
-        # 右側：點擊計數器（醒目）
-        counter_frame = tk.Frame(bottom_frame, bg="#222", padx=15, pady=5)
-        counter_frame.pack(side="right", padx=10)
-
-        tk.Label(counter_frame, text="已幫你點擊", bg="#222", fg="#888", font=("", 9)).pack()
+        # 右側：設定按鈕 + 計數簡顯
         self.count_var = tk.StringVar(value="0")
-        self.count_label = tk.Label(counter_frame, textvariable=self.count_var,
-                                     bg="#222", fg="#4CAF50", font=("Consolas", 24, "bold"))
-        self.count_label.pack()
-        tk.Label(counter_frame, text="次", bg="#222", fg="#888", font=("", 9)).pack()
+        count_btn = tk.Button(bottom_frame, textvariable=self.count_var, width=6,
+                               bg="#222", fg="#4CAF50", font=("Consolas", 12, "bold"),
+                               relief="flat", cursor="hand2", command=self.show_settings)
+        count_btn.pack(side="right", padx=5)
+        ttk.Label(bottom_frame, text="次 |", foreground="gray").pack(side="right")
+
+        ttk.Button(bottom_frame, text="⚙ 設定", command=self.show_settings, width=8).pack(side="right", padx=5)
 
         # 狀態
         self.status_var = tk.StringVar(value="按「截圖」開始")
@@ -344,11 +352,176 @@ class TrayClicker:
         self.root.after(0, self._update_counter_ui)
 
     def _update_counter_ui(self):
-        """更新計數器 UI（帶閃爍效果）"""
+        """更新計數器 UI"""
         self.count_var.set(str(self.click_count))
-        # 閃爍效果
-        self.count_label.config(fg="#FFEB3B")  # 黃色
-        self.root.after(150, lambda: self.count_label.config(fg="#4CAF50"))  # 回綠色
+
+    def show_settings(self):
+        """顯示設定面板"""
+        settings_win = tk.Toplevel(self.root)
+        settings_win.title("PyClick 設定")
+        settings_win.geometry("500x600")
+        settings_win.transient(self.root)
+        settings_win.grab_set()
+
+        notebook = ttk.Notebook(settings_win)
+        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # === 頁籤1：功績統計 ===
+        stats_frame = ttk.Frame(notebook, padding=20)
+        notebook.add(stats_frame, text="📊 功績")
+
+        # 大數字顯示
+        tk.Label(stats_frame, text="已幫你點擊", font=("", 14), fg="#666").pack(pady=(20, 5))
+        tk.Label(stats_frame, text=str(self.click_count), font=("Consolas", 72, "bold"), fg="#4CAF50").pack()
+        tk.Label(stats_frame, text="次", font=("", 14), fg="#666").pack(pady=(5, 30))
+
+        # 統計資訊
+        info_frame = ttk.LabelFrame(stats_frame, text="統計", padding=10)
+        info_frame.pack(fill="x", pady=10)
+        ttk.Label(info_frame, text=f"本次啟動點擊: {self.click_count} 次").pack(anchor="w")
+        ttk.Label(info_frame, text=f"當前模式: {self.mode}").pack(anchor="w")
+        ttk.Label(info_frame, text=f"掃描間隔: {self.auto_interval} 秒").pack(anchor="w")
+
+        # === 頁籤2：模板管理 ===
+        template_frame = ttk.Frame(notebook, padding=20)
+        notebook.add(template_frame, text="📁 模板")
+
+        ttk.Label(template_frame, text="已儲存的模板", font=("", 12, "bold")).pack(anchor="w", pady=(0, 10))
+
+        # 模板列表
+        list_frame = ttk.Frame(template_frame)
+        list_frame.pack(fill="both", expand=True)
+
+        self.template_listbox = tk.Listbox(list_frame, height=10, font=("", 10))
+        self.template_listbox.pack(side="left", fill="both", expand=True)
+
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.template_listbox.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.template_listbox.config(yscrollcommand=scrollbar.set)
+
+        # 載入已儲存的模板
+        self._load_template_list()
+
+        # 按鈕
+        btn_frame = ttk.Frame(template_frame)
+        btn_frame.pack(fill="x", pady=10)
+
+        ttk.Button(btn_frame, text="💾 儲存目前模板", command=self._save_current_template).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="📂 載入選中", command=self._load_selected_template).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="🗑 刪除選中", command=self._delete_selected_template).pack(side="left", padx=5)
+
+        # 當前模板預覽
+        if self.template is not None:
+            ttk.Label(template_frame, text="當前模板預覽:", font=("", 10)).pack(anchor="w", pady=(10, 5))
+            h, w = self.template.shape[:2]
+            scale = min(150/w, 100/h, 1.0)
+            thumb = cv2.resize(self.template, (int(w*scale), int(h*scale)))
+            thumb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
+            photo = ImageTk.PhotoImage(Image.fromarray(thumb))
+            preview_label = ttk.Label(template_frame, image=photo)
+            preview_label.image = photo
+            preview_label.pack(anchor="w")
+
+        # === 頁籤3：設定 ===
+        config_frame = ttk.Frame(notebook, padding=20)
+        notebook.add(config_frame, text="⚙ 設定")
+
+        ttk.Label(config_frame, text="個人化設定", font=("", 12, "bold")).pack(anchor="w", pady=(0, 15))
+
+        # 相似度門檻
+        threshold_frame = ttk.Frame(config_frame)
+        threshold_frame.pack(fill="x", pady=5)
+        ttk.Label(threshold_frame, text="相似度門檻:").pack(side="left")
+        ttk.Label(threshold_frame, text="70%（預設）", foreground="gray").pack(side="left", padx=10)
+
+        # 點擊冷卻
+        cooldown_frame = ttk.Frame(config_frame)
+        cooldown_frame.pack(fill="x", pady=5)
+        ttk.Label(cooldown_frame, text="點擊冷卻:").pack(side="left")
+        ttk.Label(cooldown_frame, text=f"{self.click_cooldown} 秒", foreground="gray").pack(side="left", padx=10)
+
+        # 熱鍵
+        hotkey_frame = ttk.Frame(config_frame)
+        hotkey_frame.pack(fill="x", pady=5)
+        ttk.Label(hotkey_frame, text="觸發熱鍵:").pack(side="left")
+        ttk.Label(hotkey_frame, text=self.hotkey, foreground="gray").pack(side="left", padx=10)
+
+        ttk.Separator(config_frame, orient="horizontal").pack(fill="x", pady=20)
+
+        ttk.Label(config_frame, text="更多設定即將推出...", foreground="gray").pack()
+
+    def _load_template_list(self):
+        """載入模板列表"""
+        import os
+        template_dir = os.path.join(os.path.dirname(__file__), "templates")
+        if not os.path.exists(template_dir):
+            os.makedirs(template_dir)
+
+        self.template_listbox.delete(0, tk.END)
+        for f in os.listdir(template_dir):
+            if f.endswith(".png"):
+                self.template_listbox.insert(tk.END, f[:-4])
+
+    def _save_current_template(self):
+        """儲存當前模板"""
+        if self.template is None:
+            return
+
+        import os
+        from tkinter import simpledialog
+
+        name = simpledialog.askstring("儲存模板", "模板名稱:", parent=self.root)
+        if not name:
+            return
+
+        template_dir = os.path.join(os.path.dirname(__file__), "templates")
+        if not os.path.exists(template_dir):
+            os.makedirs(template_dir)
+
+        filepath = os.path.join(template_dir, f"{name}.png")
+        cv2.imwrite(filepath, self.template)
+        self._load_template_list()
+        self.status_var.set(f"模板已儲存: {name}")
+
+    def _load_selected_template(self):
+        """載入選中的模板"""
+        import os
+        selection = self.template_listbox.curselection()
+        if not selection:
+            return
+
+        name = self.template_listbox.get(selection[0])
+        template_dir = os.path.join(os.path.dirname(__file__), "templates")
+        filepath = os.path.join(template_dir, f"{name}.png")
+
+        self.template = cv2.imread(filepath)
+        if self.template is not None:
+            self.update_icon()
+            # 更新主頁模板預覽
+            h, w = self.template.shape[:2]
+            scale = min(60/w, 40/h, 1.0)
+            thumb = cv2.resize(self.template, (int(w*scale), int(h*scale)))
+            thumb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
+            self.template_photo = ImageTk.PhotoImage(Image.fromarray(thumb))
+            self.template_preview.config(image=self.template_photo)
+            self.template_info.config(text=f"{name} ({w}x{h})", foreground="green")
+            self.status_var.set(f"已載入模板: {name}")
+
+    def _delete_selected_template(self):
+        """刪除選中的模板"""
+        import os
+        selection = self.template_listbox.curselection()
+        if not selection:
+            return
+
+        name = self.template_listbox.get(selection[0])
+        template_dir = os.path.join(os.path.dirname(__file__), "templates")
+        filepath = os.path.join(template_dir, f"{name}.png")
+
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            self._load_template_list()
+            self.status_var.set(f"已刪除: {name}")
 
     def set_auto_mode(self, icon=None, item=None):
         if self.template is None:
@@ -392,6 +565,7 @@ class TrayClicker:
 
         self.selection = None
         self.zoom_level = 1.0  # 重置縮放
+        self.pan_offset = [0, 0]  # 重置平移
         self.show_preview(self.screenshot)
         self.status_var.set(f"截圖完成 {self.screenshot.shape[1]}x{self.screenshot.shape[0]} - 拖曳框選目標 (滾輪縮放)")
 
@@ -447,8 +621,8 @@ class TrayClicker:
         self.photo = ImageTk.PhotoImage(Image.fromarray(resized))
 
         self.canvas.delete("all")
-        self.img_x = (cw - nw) // 2
-        self.img_y = (ch - nh) // 2
+        self.img_x = (cw - nw) // 2 + self.pan_offset[0]
+        self.img_y = (ch - nh) // 2 + self.pan_offset[1]
         self.canvas.create_image(self.img_x, self.img_y, anchor="nw", image=self.photo)
 
     def on_mouse_wheel(self, event):
@@ -471,14 +645,55 @@ class TrayClicker:
 
         if old_zoom != self.zoom_level:
             self.show_preview(self.screenshot)
-            self.status_var.set(f"縮放: {self.zoom_level:.1f}x")
+            self.status_var.set(f"縮放: {self.zoom_level:.1f}x (空白鍵+拖曳移動)")
+
+    def on_space_press(self, event):
+        """空白鍵按下"""
+        self.space_held = True
+        self.canvas.config(cursor="fleur")  # 移動游標
+
+    def on_space_release(self, event):
+        """空白鍵放開"""
+        self.space_held = False
+        self.pan_start = None
+        self.canvas.config(cursor="crosshair")
+
+    def on_pan_start(self, event):
+        """開始平移（中鍵）"""
+        self.pan_start = (event.x, event.y)
+
+    def on_pan_move(self, event):
+        """平移中（中鍵）"""
+        if self.pan_start is None:
+            return
+        dx = event.x - self.pan_start[0]
+        dy = event.y - self.pan_start[1]
+        self.pan_offset[0] += dx
+        self.pan_offset[1] += dy
+        self.pan_start = (event.x, event.y)
+        self.show_preview(self.screenshot)
 
     def on_drag_start(self, event):
         if self.screenshot is None:
             return
-        self.drag_start = (event.x, event.y)
+        if self.space_held:
+            # 空白鍵按住：平移模式
+            self.pan_start = (event.x, event.y)
+        else:
+            # 正常：框選模式
+            self.drag_start = (event.x, event.y)
 
     def on_drag_move(self, event):
+        if self.space_held and self.pan_start:
+            # 空白鍵按住：平移
+            dx = event.x - self.pan_start[0]
+            dy = event.y - self.pan_start[1]
+            self.pan_offset[0] += dx
+            self.pan_offset[1] += dy
+            self.pan_start = (event.x, event.y)
+            self.show_preview(self.screenshot)
+            return
+
         if self.drag_start is None:
             return
         if self.drag_rect:
