@@ -95,6 +95,7 @@ class TrayClicker:
         self.click_cooldown = 1.0
         self.last_click_time = 0
         self.instant_click = True  # 瞬間點擊模式
+        self.continuous_click = False  # 連續點擊模式
         self.click_count = 0  # 點擊計數器
 
         # GUI
@@ -206,15 +207,18 @@ class TrayClicker:
         bottom_frame = ttk.Frame(self.root)
         bottom_frame.pack(fill="x", padx=10, pady=10)
 
-        # 左側：模板資訊
+        # 左側：模板狀態（純文字，不顯示圖片）
         ttk.Label(bottom_frame, text="模板:").pack(side="left")
         self.template_info = ttk.Label(bottom_frame, text="(未設定)", foreground="gray")
         self.template_info.pack(side="left", padx=5)
 
-        self.template_preview = ttk.Label(bottom_frame, background="#333")
-        self.template_preview.pack(side="left", padx=10)
+        # 連續點擊選項
+        ttk.Separator(bottom_frame, orient="vertical").pack(side="left", fill="y", padx=10)
+        self.continuous_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(bottom_frame, text="連續點擊", variable=self.continuous_var,
+                        command=self.on_continuous_change).pack(side="left", padx=5)
 
-        # 右側：設定按鈕 + 計數簡顯
+        # 右側：設定按鈕 + 計數
         self.count_var = tk.StringVar(value="0")
         count_btn = tk.Button(bottom_frame, textvariable=self.count_var, width=6,
                                bg="#222", fg="#4CAF50", font=("Consolas", 12, "bold"),
@@ -346,6 +350,14 @@ class TrayClicker:
         self.instant_click = self.instant_var.get()
         mode_text = "瞬間" if self.instant_click else "穩定"
         self.status_var.set(f"點擊模式: {mode_text}")
+
+    def on_continuous_change(self):
+        """連續點擊改變"""
+        self.continuous_click = self.continuous_var.get()
+        if self.continuous_click:
+            self.status_var.set("連續點擊: 開啟（找到就連點）")
+        else:
+            self.status_var.set("連續點擊: 關閉")
 
     def increment_click_count(self):
         """增加點擊計數並更新 UI"""
@@ -498,13 +510,7 @@ class TrayClicker:
         self.template = cv2.imread(filepath)
         if self.template is not None:
             self.update_icon()
-            # 更新主頁模板預覽
             h, w = self.template.shape[:2]
-            scale = min(60/w, 40/h, 1.0)
-            thumb = cv2.resize(self.template, (int(w*scale), int(h*scale)))
-            thumb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
-            self.template_photo = ImageTk.PhotoImage(Image.fromarray(thumb))
-            self.template_preview.config(image=self.template_photo)
             self.template_info.config(text=f"{name} ({w}x{h})", foreground="green")
             self.status_var.set(f"已載入模板: {name}")
 
@@ -716,13 +722,8 @@ class TrayClicker:
         self.template = self.screenshot[y1:y2, x1:x2].copy()
         self.last_screen_hash = None
 
-        # 顯示模板縮圖
+        # 更新模板資訊
         h, w = self.template.shape[:2]
-        scale = min(60/w, 40/h, 1.0)
-        thumb = cv2.resize(self.template, (int(w*scale), int(h*scale)))
-        thumb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
-        self.template_photo = ImageTk.PhotoImage(Image.fromarray(thumb))
-        self.template_preview.config(image=self.template_photo)
         self.template_info.config(text=f"{w}x{h} px", foreground="green")
 
         self.update_icon()
@@ -775,9 +776,11 @@ class TrayClicker:
         """自動偵測（不搶焦點）"""
         while self.running and self.mode == "auto":
             try:
-                if time.time() - self.last_click_time < self.click_cooldown:
-                    time.sleep(0.1)
-                    continue
+                # 連續模式跳過冷卻
+                if not self.continuous_click:
+                    if time.time() - self.last_click_time < self.click_cooldown:
+                        time.sleep(0.1)
+                        continue
 
                 with mss.mss() as sct:
                     monitor = sct.monitors[0]
