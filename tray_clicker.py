@@ -94,13 +94,23 @@ class TrayClicker:
         ctrl_frame = ttk.LabelFrame(self.root, text="控制")
         ctrl_frame.pack(fill="x", padx=10, pady=10)
 
-        # 第一排：截圖相關
+        # 第一排：操作流程
         row1 = ttk.Frame(ctrl_frame)
         row1.pack(fill="x", padx=10, pady=5)
 
-        ttk.Button(row1, text="📷 截圖", command=self.take_screenshot, width=12).pack(side="left", padx=5)
-        ttk.Button(row1, text="🔍 偵測藍色", command=self.detect_blue, width=12).pack(side="left", padx=5)
-        ttk.Button(row1, text="💾 儲存選取", command=self.save_template, width=12).pack(side="left", padx=5)
+        # 左側：準備步驟
+        ttk.Label(row1, text="步驟:").pack(side="left", padx=(0, 5))
+        ttk.Button(row1, text="1. 截圖", command=self.take_screenshot, width=10).pack(side="left", padx=2)
+        ttk.Button(row1, text="2. 偵測藍色", command=self.detect_blue, width=12).pack(side="left", padx=2)
+        ttk.Label(row1, text="→ 拖曳框選 →").pack(side="left", padx=5)
+
+        # 重點：儲存按鈕（用醒目的 tk.Button）
+        self.save_btn = tk.Button(row1, text="★ 3. 儲存選取 ★", command=self.save_template,
+                                   width=14, height=1, bg="#4CAF50", fg="white",
+                                   font=("", 10, "bold"), relief="raised", cursor="hand2")
+        self.save_btn.pack(side="left", padx=10)
+
+        ttk.Separator(row1, orient="vertical").pack(side="left", fill="y", padx=10)
         ttk.Button(row1, text="🎯 測試找圖", command=self.test_find, width=12).pack(side="left", padx=5)
 
         # 第二排：模式控制
