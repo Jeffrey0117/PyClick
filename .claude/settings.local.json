@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\jeffb\\\\Desktop\\\\code\\\\pyclick && pip install -r requirements.txt\")",
+      "Bash(/mnt/c/Windows/System32/cmd.exe /c \"cd /d C:\\\\Users\\\\jeffb\\\\Desktop\\\\code\\\\pyclick && pip install -r requirements.txt\")",
+      "Bash(/mnt/c/Windows/System32/cmd.exe /c \"cd /d C:\\\\Users\\\\jeffb\\\\Desktop\\\\code\\\\pyclick && python blue_click_gui.py\")",
+      "Bash(/mnt/c/Windows/System32/cmd.exe /c \"pip install keyboard\")",
+      "Bash(/mnt/c/Windows/System32/cmd.exe /c \"cd /d C:\\\\Users\\\\jeffb\\\\Desktop\\\\code\\\\pyclick && python smart_clicker.py\")"
+    ]
+  }
+}
