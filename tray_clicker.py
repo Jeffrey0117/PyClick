@@ -326,7 +326,9 @@ class TrayClicker:
 
         if self.mode == "auto":
             self.start_auto_thread()
-            self.status_var.set(f"自動模式開啟 (每 {self.auto_interval} 秒掃描)")
+            self.status_var.set(f"自動模式開啟 - 視窗將縮小")
+            # 自動縮小避免點到自己
+            self.root.after(500, self.hide_to_tray)
         elif self.mode == "hotkey":
             self.status_var.set("熱鍵模式：按 F6 找圖點擊")
         else:
