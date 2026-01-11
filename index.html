@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PyClick - 智能自動點擊器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border-color: #30363d;
+            --text-primary: #f0f6fc;
+            --text-secondary: #8b949e;
+            --accent-green: #4CAF50;
+            --accent-green-dark: #2E7D32;
+            --accent-blue: #2196F3;
+            --accent-orange: #FF9800;
+            --accent-purple: #8b5cf6;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", Helvetica, Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: rgba(13, 17, 23, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border-color);
+            z-index: 1000;
+            padding: 1rem 0;
+        }
+
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-green);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 6rem 2rem 4rem;
+            background: radial-gradient(ellipse at top, rgba(76, 175, 80, 0.1) 0%, transparent 50%);
+        }
+
+        .hero-badge {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+        }
+
+        .hero-badge span {
+            color: var(--accent-green);
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-green) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-subtitle {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin-bottom: 2.5rem;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 0.875rem 2rem;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--accent-green);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-green-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(76, 175, 80, 0.3);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--text-secondary);
+        }
+
+        /* Features Section */
+        .section {
+            padding: 6rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        .section-header h2 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .section-header p {
+            color: var(--text-secondary);
+            font-size: 1.125rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            padding: 2rem;
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            border-color: var(--accent-green);
+            transform: translateY(-4px);
+        }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--accent-green) 0%, var(--accent-blue) 100%);
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.25rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+        }
+
+        /* Screenshot Section */
+        .screenshot-section {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .screenshot-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .screenshot-item {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            overflow: hidden;
+        }
+
+        .screenshot-placeholder {
+            aspect-ratio: 16/10;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-tertiary) 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .screenshot-placeholder-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .screenshot-caption {
+            padding: 1.25rem;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        /* How to Use Section */
+        .steps-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .step {
+            display: flex;
+            gap: 2rem;
+            align-items: flex-start;
+        }
+
+        .step-number {
+            width: 48px;
+            height: 48px;
+            min-width: 48px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .step-content h3 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .step-content p {
+            color: var(--text-secondary);
+        }
+
+        /* Modes Section */
+        .modes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 3rem;
+        }
+
+        .mode-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .mode-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 1rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+        }
+
+        .mode-icon.auto {
+            background: var(--accent-green);
+        }
+
+        .mode-icon.hotkey {
+            background: var(--accent-orange);
+        }
+
+        .mode-icon.off {
+            background: var(--accent-blue);
+        }
+
+        .mode-card h3 {
+            margin-bottom: 0.5rem;
+        }
+
+        .mode-card p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Tech Stack */
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .tech-badge {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        /* Download Section */
+        .download-section {
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(33, 150, 243, 0.1) 100%);
+            text-align: center;
+        }
+
+        .download-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 1.5rem;
+            padding: 3rem;
+            max-width: 600px;
+            margin: 2rem auto 0;
+        }
+
+        .download-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .download-card p {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+        }
+
+        .code-block {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            text-align: left;
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+        }
+
+        .code-block .comment {
+            color: var(--text-secondary);
+        }
+
+        .code-block .command {
+            color: var(--accent-green);
+        }
+
+        /* Requirements */
+        .requirements {
+            text-align: left;
+            margin-top: 2rem;
+        }
+
+        .requirements h4 {
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .requirements ul {
+            list-style: none;
+        }
+
+        .requirements li {
+            padding: 0.5rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+            color: var(--text-secondary);
+        }
+
+        .requirements li::before {
+            content: ">";
+            position: absolute;
+            left: 0;
+            color: var(--accent-green);
+        }
+
+        /* Footer */
+        footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        footer p {
+            color: var(--text-secondary);
+        }
+
+        footer a {
+            color: var(--accent-green);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .step {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .section {
+                padding: 4rem 1.5rem;
+            }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--border-color);
+        }
+
+        /* Animations */
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .hero-icon {
+            animation: float 3s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <a href="#" class="logo">
+                <span class="logo-icon">P</span>
+                PyClick
+            </a>
+            <ul class="nav-links">
+                <li><a href="#features">功能特色</a></li>
+                <li><a href="#screenshots">螢幕截圖</a></li>
+                <li><a href="#usage">使用說明</a></li>
+                <li><a href="#download">下載安裝</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-badge">
+            <span>Windows</span> 專屬自動化工具
+        </div>
+        <h1>PyClick 智能點擊器</h1>
+        <p class="hero-subtitle">
+            透過圖像識別技術，自動找到螢幕上的目標並精準點擊。
+            釋放你的雙手，讓重複性點擊工作自動化完成。
+        </p>
+        <div class="hero-buttons">
+            <a href="#download" class="btn btn-primary">立即下載</a>
+            <a href="#usage" class="btn btn-secondary">使用教學</a>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="section">
+        <div class="section-header">
+            <h2>功能特色</h2>
+            <p>強大的圖像識別能力，搭配彈性的操作模式，滿足各種自動化需求</p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🎯</div>
+                <h3>智能圖像識別</h3>
+                <p>採用 OpenCV 模板匹配技術，精準找到螢幕上與模板相似的目標區域，相似度門檻可調整。</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔥</div>
+                <h3>自動偵測模式</h3>
+                <p>持續掃描螢幕，一旦發現目標就自動點擊。支援可調整的掃描間隔（0.3 ~ 2 秒）。</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⌨️</div>
+                <h3>熱鍵觸發模式</h3>
+                <p>按下 F6 手動觸發找圖點擊，適合需要人工控制時機的場景。</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">👆</div>
+                <h3>無焦點點擊</h3>
+                <p>點擊時不會搶走前景視窗的焦點，你可以繼續使用其他應用程式而不受干擾。</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>瞬間點擊模式</h3>
+                <p>提供瞬間點擊與穩定點擊兩種模式，瞬間模式無延遲、穩定模式確保點擊被正確識別。</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔄</div>
+                <h3>連續點擊功能</h3>
+                <p>開啟連續點擊後，只要目標存在就會持續點擊，適合需要快速連點的情境。</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">💾</div>
+                <h3>模板管理系統</h3>
+                <p>儲存多個點擊模板，可設定預設模板，啟動時自動載入，快速切換不同任務。</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔵</div>
+                <h3>藍色區域偵測</h3>
+                <p>內建藍色區域偵測功能，快速標記螢幕上的藍色元素，方便框選目標。</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>點擊統計功能</h3>
+                <p>即時統計已完成的點擊次數，讓你掌握自動化作業的進度。</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screenshot Section -->
+    <section id="screenshots" class="section screenshot-section">
+        <div class="section-header">
+            <h2>介面預覽</h2>
+            <p>簡潔直覺的操作介面，讓自動化設定變得輕鬆簡單</p>
+        </div>
+        <div class="screenshot-container">
+            <div class="screenshot-item">
+                <div class="screenshot-placeholder">
+                    <div class="screenshot-placeholder-icon">🖥️</div>
+                    <span>主控制面板截圖</span>
+                </div>
+                <div class="screenshot-caption">主控制面板 - 完整的功能控制介面</div>
+            </div>
+            <div class="screenshot-item">
+                <div class="screenshot-placeholder">
+                    <div class="screenshot-placeholder-icon">🎯</div>
+                    <span>模板選取截圖</span>
+                </div>
+                <div class="screenshot-caption">模板選取 - 拖曳框選目標區域</div>
+            </div>
+            <div class="screenshot-item">
+                <div class="screenshot-placeholder">
+                    <div class="screenshot-placeholder-icon">⚙️</div>
+                    <span>設定面板截圖</span>
+                </div>
+                <div class="screenshot-caption">設定面板 - 模板管理與統計資訊</div>
+            </div>
+            <div class="screenshot-item">
+                <div class="screenshot-placeholder">
+                    <div class="screenshot-placeholder-icon">📍</div>
+                    <span>系統托盤截圖</span>
+                </div>
+                <div class="screenshot-caption">系統托盤 - 背景執行隨時控制</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Usage Section -->
+    <section id="usage" class="section">
+        <div class="section-header">
+            <h2>使用說明</h2>
+            <p>三個簡單步驟，立即開始自動化點擊</p>
+        </div>
+        <div class="steps-container">
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h3>截圖並框選目標</h3>
+                    <p>點擊「截圖」按鈕擷取當前螢幕，然後在預覽區域中拖曳框選你想要點擊的目標。建議選取範圍適中，太小容易誤判、太大會影響效能。可使用滾輪縮放、Alt+拖曳移動來精確定位。</p>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h3>儲存模板</h3>
+                    <p>框選完成後，點擊綠色的「儲存選取」按鈕將目標區域存為模板。你也可以使用「測試找圖」功能，確認模板能正確識別目標。</p>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h3>選擇模式並啟動</h3>
+                    <p>選擇「自動點擊」模式，程式會持續掃描螢幕並自動點擊目標；或選擇「熱鍵模式」，按 F6 手動觸發。啟動自動模式後視窗會自動縮小到系統托盤，避免影響點擊作業。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modes -->
+        <div class="modes-grid">
+            <div class="mode-card">
+                <div class="mode-icon auto">A</div>
+                <h3>自動模式</h3>
+                <p>持續掃描螢幕，發現目標自動點擊。適合需要長時間執行的自動化任務。</p>
+            </div>
+            <div class="mode-card">
+                <div class="mode-icon hotkey">H</div>
+                <h3>熱鍵模式</h3>
+                <p>按下 F6 時觸發一次找圖點擊。適合需要人工控制執行時機的場景。</p>
+            </div>
+            <div class="mode-card">
+                <div class="mode-icon off">O</div>
+                <h3>關閉模式</h3>
+                <p>停止所有自動操作。程式仍在背景運行，可隨時切換至其他模式。</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section id="download" class="section download-section">
+        <div class="section-header">
+            <h2>下載與安裝</h2>
+            <p>使用 Python 直接執行，或打包成獨立執行檔</p>
+        </div>
+        <div class="download-card">
+            <h3>從原始碼執行</h3>
+            <p>確保已安裝 Python 3.8 以上版本</p>
+            <div class="code-block">
+                <span class="comment"># 複製專案</span><br>
+                <span class="command">git clone</span> https://github.com/your-repo/pyclick.git<br>
+                <span class="command">cd</span> pyclick<br><br>
+                <span class="comment"># 安裝相依套件</span><br>
+                <span class="command">pip install</span> -r requirements.txt<br><br>
+                <span class="comment"># 執行程式</span><br>
+                <span class="command">python</span> tray_clicker.py
+            </div>
+            <div class="requirements">
+                <h4>系統需求</h4>
+                <ul>
+                    <li>Windows 10 / 11</li>
+                    <li>Python 3.8+</li>
+                    <li>相依套件：opencv-python, numpy, mss, pyautogui, pystray, keyboard, Pillow</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="tech-stack">
+            <span class="tech-badge">Python</span>
+            <span class="tech-badge">OpenCV</span>
+            <span class="tech-badge">Tkinter</span>
+            <span class="tech-badge">pystray</span>
+            <span class="tech-badge">mss</span>
+            <span class="tech-badge">pyautogui</span>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p>
+            PyClick - 智能自動點擊器<br>
+            <span style="font-size: 0.875rem;">讓重複性工作自動化，釋放你的雙手</span>
+        </p>
+    </footer>
+</body>
+</html>
