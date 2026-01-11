@@ -28,22 +28,26 @@ MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
 
 
-def click_no_focus(x, y):
-    """點擊但不改變焦點（使用底層 API）"""
+def click_no_focus(x, y, instant=True):
+    """點擊但不改變焦點"""
     # 儲存原本游標位置
     original_pos = pyautogui.position()
 
     # 移動游標
     ctypes.windll.user32.SetCursorPos(x, y)
 
-    # 發送滑鼠事件（不會改變焦點）
-    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-    time.sleep(0.01)
-    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-
-    # 游標回原位
-    time.sleep(0.02)
-    ctypes.windll.user32.SetCursorPos(original_pos[0], original_pos[1])
+    if instant:
+        # 瞬間模式：無延遲
+        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+        ctypes.windll.user32.SetCursorPos(original_pos[0], original_pos[1])
+    else:
+        # 穩定模式：有延遲確保點擊被偵測
+        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        time.sleep(0.01)
+        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+        time.sleep(0.02)
+        ctypes.windll.user32.SetCursorPos(original_pos[0], original_pos[1])
 
 
 class TrayClicker:
@@ -58,6 +62,7 @@ class TrayClicker:
         self.last_screen_hash = None
         self.click_cooldown = 1.0
         self.last_click_time = 0
+        self.instant_click = True  # 瞬間點擊模式
 
         # GUI
         self.root = None
@@ -113,6 +118,13 @@ class TrayClicker:
         interval_combo.pack(side="left", padx=5)
         interval_combo.bind("<<ComboboxSelected>>", self.on_interval_change)
         ttk.Label(row2, text="秒").pack(side="left")
+
+        ttk.Separator(row2, orient="vertical").pack(side="left", fill="y", padx=10)
+
+        # 點擊速度選項
+        self.instant_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(row2, text="瞬間點擊", variable=self.instant_var,
+                        command=self.on_instant_change).pack(side="left", padx=5)
 
         ttk.Button(row2, text="縮小到托盤", command=self.hide_to_tray).pack(side="right", padx=10)
 
@@ -251,6 +263,12 @@ class TrayClicker:
         self.update_icon()
         if self.mode == "auto":
             self.status_var.set(f"自動模式 (每 {self.auto_interval} 秒掃描)")
+
+    def on_instant_change(self):
+        """點擊速度改變"""
+        self.instant_click = self.instant_var.get()
+        mode_text = "瞬間" if self.instant_click else "穩定"
+        self.status_var.set(f"點擊模式: {mode_text}")
 
     def set_auto_mode(self, icon=None, item=None):
         if self.template is None:
@@ -491,7 +509,7 @@ class TrayClicker:
                     cy = max_loc[1] + th // 2 + oy
 
                     # 使用不搶焦點的點擊
-                    click_no_focus(cx, cy)
+                    click_no_focus(cx, cy, self.instant_click)
 
                     self.last_click_time = time.time()
                     self.last_screen_hash = None
@@ -526,7 +544,7 @@ class TrayClicker:
             cx = max_loc[0] + tw // 2 + ox
             cy = max_loc[1] + th // 2 + oy
 
-            click_no_focus(cx, cy)
+            click_no_focus(cx, cy, self.instant_click)
 
         except Exception:
             pass
