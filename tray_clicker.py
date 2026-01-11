@@ -95,6 +95,7 @@ class TrayClicker:
         self.click_cooldown = 1.0
         self.last_click_time = 0
         self.instant_click = True  # 瞬間點擊模式
+        self.click_count = 0  # 點擊計數器
 
         # GUI
         self.root = None
@@ -197,6 +198,7 @@ class TrayClicker:
         bottom_frame = ttk.Frame(self.root)
         bottom_frame.pack(fill="x", padx=10, pady=10)
 
+        # 左側：模板資訊
         ttk.Label(bottom_frame, text="模板:").pack(side="left")
         self.template_info = ttk.Label(bottom_frame, text="(未設定)", foreground="gray")
         self.template_info.pack(side="left", padx=5)
@@ -204,6 +206,18 @@ class TrayClicker:
         self.template_preview = ttk.Label(bottom_frame, background="#333")
         self.template_preview.pack(side="left", padx=10)
 
+        # 右側：點擊計數器（醒目）
+        counter_frame = tk.Frame(bottom_frame, bg="#222", padx=15, pady=5)
+        counter_frame.pack(side="right", padx=10)
+
+        tk.Label(counter_frame, text="已幫你點擊", bg="#222", fg="#888", font=("", 9)).pack()
+        self.count_var = tk.StringVar(value="0")
+        self.count_label = tk.Label(counter_frame, textvariable=self.count_var,
+                                     bg="#222", fg="#4CAF50", font=("Consolas", 24, "bold"))
+        self.count_label.pack()
+        tk.Label(counter_frame, text="次", bg="#222", fg="#888", font=("", 9)).pack()
+
+        # 狀態
         self.status_var = tk.StringVar(value="按「截圖」開始")
         ttk.Label(bottom_frame, textvariable=self.status_var).pack(side="right", padx=10)
 
@@ -323,6 +337,18 @@ class TrayClicker:
         self.instant_click = self.instant_var.get()
         mode_text = "瞬間" if self.instant_click else "穩定"
         self.status_var.set(f"點擊模式: {mode_text}")
+
+    def increment_click_count(self):
+        """增加點擊計數並更新 UI"""
+        self.click_count += 1
+        self.root.after(0, self._update_counter_ui)
+
+    def _update_counter_ui(self):
+        """更新計數器 UI（帶閃爍效果）"""
+        self.count_var.set(str(self.click_count))
+        # 閃爍效果
+        self.count_label.config(fg="#FFEB3B")  # 黃色
+        self.root.after(150, lambda: self.count_label.config(fg="#4CAF50"))  # 回綠色
 
     def set_auto_mode(self, icon=None, item=None):
         if self.template is None:
@@ -588,6 +614,7 @@ class TrayClicker:
 
                     # 使用不搶焦點的點擊
                     click_no_focus(cx, cy, self.instant_click)
+                    self.increment_click_count()
 
                     self.last_click_time = time.time()
                     self.last_screen_hash = None
@@ -623,6 +650,7 @@ class TrayClicker:
             cy = max_loc[1] + th // 2 + oy
 
             click_no_focus(cx, cy, self.instant_click)
+            self.increment_click_count()
 
         except Exception:
             pass
