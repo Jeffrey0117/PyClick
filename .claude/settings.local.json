@@ -5,7 +5,9 @@
       "Bash(/mnt/c/Windows/System32/cmd.exe /c \"cd /d C:\\\\Users\\\\jeffb\\\\Desktop\\\\code\\\\pyclick && pip install -r requirements.txt\")",
       "Bash(/mnt/c/Windows/System32/cmd.exe /c \"cd /d C:\\\\Users\\\\jeffb\\\\Desktop\\\\code\\\\pyclick && python blue_click_gui.py\")",
       "Bash(/mnt/c/Windows/System32/cmd.exe /c \"pip install keyboard\")",
-      "Bash(/mnt/c/Windows/System32/cmd.exe /c \"cd /d C:\\\\Users\\\\jeffb\\\\Desktop\\\\code\\\\pyclick && python smart_clicker.py\")"
+      "Bash(/mnt/c/Windows/System32/cmd.exe /c \"cd /d C:\\\\Users\\\\jeffb\\\\Desktop\\\\code\\\\pyclick && python smart_clicker.py\")",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Return cursor to original position after clicking\n\nAfter clicking the target, the cursor now moves back to where it was\nbefore the hotkey was pressed.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

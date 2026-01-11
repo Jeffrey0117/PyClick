@@ -298,6 +298,9 @@ class SmartClicker:
     def find_and_click(self):
         """找圖並點擊"""
         try:
+            # 記住原始游標位置
+            original_pos = pyautogui.position()
+
             # 截取當前螢幕
             with mss.mss() as sct:
                 monitor = sct.monitors[0]
@@ -320,6 +323,10 @@ class SmartClicker:
 
             # 點擊
             pyautogui.click(cx, cy)
+
+            # 游標回到原位置
+            time.sleep(0.05)
+            pyautogui.moveTo(original_pos[0], original_pos[1])
 
             self.root.after(0, lambda: self.status_var.set(f"已點擊 ({cx}, {cy}) 相似度 {max_val:.1%}"))
 
