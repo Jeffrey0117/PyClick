@@ -180,7 +180,7 @@ class TrayClicker:
         tip_frame.pack(fill="x", padx=5, pady=2)
         ttk.Label(tip_frame, text="💡 選取範圍適中即可，太小易誤判、太大會變慢",
                   foreground="gray", font=("", 9)).pack(side="left")
-        ttk.Label(tip_frame, text="🖱 滾輪縮放 | 空白鍵+拖曳移動", foreground="#666", font=("", 9)).pack(side="right")
+        ttk.Label(tip_frame, text="🖱 滾輪縮放 | Alt+拖曳移動", foreground="#666", font=("", 9)).pack(side="right")
 
         self.canvas = tk.Canvas(preview_frame, bg="#333", cursor="crosshair")
         self.canvas.pack(fill="both", expand=True)
@@ -192,15 +192,14 @@ class TrayClicker:
         self.canvas.bind("<Button-4>", self.on_mouse_wheel)    # Linux 滾輪上
         self.canvas.bind("<Button-5>", self.on_mouse_wheel)    # Linux 滾輪下
 
-        # 空白鍵+拖曳移動圖片
-        self.root.bind("<KeyPress-space>", self.on_space_press)
-        self.root.bind("<KeyRelease-space>", self.on_space_release)
+        # Alt+拖曳移動圖片
+        self.canvas.bind("<Alt-ButtonPress-1>", self.on_pan_start)
+        self.canvas.bind("<Alt-B1-Motion>", self.on_pan_move)
         self.canvas.bind("<ButtonPress-2>", self.on_pan_start)  # 中鍵也可以
         self.canvas.bind("<B2-Motion>", self.on_pan_move)
 
         self.zoom_level = 1.0  # 縮放等級
         self.pan_offset = [0, 0]  # 平移偏移
-        self.space_held = False  # 空白鍵狀態
         self.pan_start = None
 
         # === 底部狀態 ===
@@ -645,25 +644,15 @@ class TrayClicker:
 
         if old_zoom != self.zoom_level:
             self.show_preview(self.screenshot)
-            self.status_var.set(f"縮放: {self.zoom_level:.1f}x (空白鍵+拖曳移動)")
-
-    def on_space_press(self, event):
-        """空白鍵按下"""
-        self.space_held = True
-        self.canvas.config(cursor="fleur")  # 移動游標
-
-    def on_space_release(self, event):
-        """空白鍵放開"""
-        self.space_held = False
-        self.pan_start = None
-        self.canvas.config(cursor="crosshair")
+            self.status_var.set(f"縮放: {self.zoom_level:.1f}x (Alt+拖曳移動)")
 
     def on_pan_start(self, event):
-        """開始平移（中鍵）"""
+        """開始平移"""
         self.pan_start = (event.x, event.y)
+        self.canvas.config(cursor="fleur")
 
     def on_pan_move(self, event):
-        """平移中（中鍵）"""
+        """平移中"""
         if self.pan_start is None:
             return
         dx = event.x - self.pan_start[0]
@@ -676,24 +665,10 @@ class TrayClicker:
     def on_drag_start(self, event):
         if self.screenshot is None:
             return
-        if self.space_held:
-            # 空白鍵按住：平移模式
-            self.pan_start = (event.x, event.y)
-        else:
-            # 正常：框選模式
-            self.drag_start = (event.x, event.y)
+        self.canvas.config(cursor="crosshair")
+        self.drag_start = (event.x, event.y)
 
     def on_drag_move(self, event):
-        if self.space_held and self.pan_start:
-            # 空白鍵按住：平移
-            dx = event.x - self.pan_start[0]
-            dy = event.y - self.pan_start[1]
-            self.pan_offset[0] += dx
-            self.pan_offset[1] += dy
-            self.pan_start = (event.x, event.y)
-            self.show_preview(self.screenshot)
-            return
-
         if self.drag_start is None:
             return
         if self.drag_rect:
