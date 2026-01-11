@@ -421,6 +421,7 @@ class TrayClicker:
 
         ttk.Button(btn_frame, text="💾 儲存目前模板", command=self._save_current_template).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="📂 載入選中", command=self._load_selected_template).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="⭐ 設為預設", command=self._set_default_template).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="🗑 刪除選中", command=self._delete_selected_template).pack(side="left", padx=5)
 
         # 當前模板預覽
@@ -529,6 +530,63 @@ class TrayClicker:
             os.remove(filepath)
             self._load_template_list()
             self.status_var.set(f"已刪除: {name}")
+
+    def _set_default_template(self):
+        """設定選中的模板為預設"""
+        import os
+        import json
+
+        selection = self.template_listbox.curselection()
+        if not selection:
+            self.status_var.set("請先選擇一個模板")
+            return
+
+        name = self.template_listbox.get(selection[0])
+        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+
+        config = {}
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+
+        config["default_template"] = name
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+
+        self.status_var.set(f"已設為預設: {name}")
+
+    def _check_default_template(self):
+        """啟動時檢查並詢問是否載入預設模板"""
+        import os
+        import json
+        from tkinter import messagebox
+
+        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        if not os.path.exists(config_path):
+            return
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        default_name = config.get("default_template")
+        if not default_name:
+            return
+
+        template_dir = os.path.join(os.path.dirname(__file__), "templates")
+        filepath = os.path.join(template_dir, f"{default_name}.png")
+
+        if not os.path.exists(filepath):
+            return
+
+        # 詢問是否載入
+        if messagebox.askyesno("載入預設模板", f"是否載入預設模板「{default_name}」？"):
+            self.template = cv2.imread(filepath)
+            if self.template is not None:
+                self.update_icon()
+                h, w = self.template.shape[:2]
+                self.template_info.config(text=f"{default_name} ({w}x{h})", foreground="green")
+                self.status_var.set(f"已載入預設模板: {default_name}")
 
     def set_auto_mode(self, icon=None, item=None):
         if self.template is None:
@@ -862,6 +920,9 @@ class TrayClicker:
         # 托盤在背景執行
         tray_thread = threading.Thread(target=self.icon.run, daemon=True)
         tray_thread.start()
+
+        # 檢查預設模板
+        self.root.after(100, self._check_default_template)
 
         # 主視窗
         self.root.mainloop()
