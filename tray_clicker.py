@@ -150,12 +150,24 @@ class TrayClicker:
         preview_frame = ttk.LabelFrame(self.root, text="預覽 (拖曳框選目標)")
         preview_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
+        # 提示文字
+        tip_frame = ttk.Frame(preview_frame)
+        tip_frame.pack(fill="x", padx=5, pady=2)
+        ttk.Label(tip_frame, text="💡 提示: 選取範圍建議適中，太小容易誤判，太大會變慢。只框選有特徵的部分即可。",
+                  foreground="gray", font=("", 9)).pack(side="left")
+        ttk.Label(tip_frame, text="🖱 滾輪縮放", foreground="gray", font=("", 9)).pack(side="right")
+
         self.canvas = tk.Canvas(preview_frame, bg="#333", cursor="crosshair")
         self.canvas.pack(fill="both", expand=True)
 
         self.canvas.bind("<ButtonPress-1>", self.on_drag_start)
         self.canvas.bind("<B1-Motion>", self.on_drag_move)
         self.canvas.bind("<ButtonRelease-1>", self.on_drag_end)
+        self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)  # Windows 滾輪
+        self.canvas.bind("<Button-4>", self.on_mouse_wheel)    # Linux 滾輪上
+        self.canvas.bind("<Button-5>", self.on_mouse_wheel)    # Linux 滾輪下
+
+        self.zoom_level = 1.0  # 縮放等級
 
         # === 底部狀態 ===
         bottom_frame = ttk.Frame(self.root)
@@ -329,8 +341,9 @@ class TrayClicker:
         self.root.update()
 
         self.selection = None
+        self.zoom_level = 1.0  # 重置縮放
         self.show_preview(self.screenshot)
-        self.status_var.set(f"截圖完成 {self.screenshot.shape[1]}x{self.screenshot.shape[0]} - 拖曳框選目標")
+        self.status_var.set(f"截圖完成 {self.screenshot.shape[1]}x{self.screenshot.shape[0]} - 拖曳框選目標 (滾輪縮放)")
 
     def detect_blue(self):
         """偵測藍色"""
@@ -367,7 +380,8 @@ class TrayClicker:
             cw, ch = 830, 400
 
         h, w = img.shape[:2]
-        self.scale = min(cw / w, ch / h, 1.0)
+        base_scale = min(cw / w, ch / h, 1.0)
+        self.scale = base_scale * self.zoom_level
         nw, nh = int(w * self.scale), int(h * self.scale)
 
         resized = cv2.resize(img, (nw, nh))
@@ -386,6 +400,28 @@ class TrayClicker:
         self.img_x = (cw - nw) // 2
         self.img_y = (ch - nh) // 2
         self.canvas.create_image(self.img_x, self.img_y, anchor="nw", image=self.photo)
+
+    def on_mouse_wheel(self, event):
+        """滾輪縮放"""
+        if self.screenshot is None:
+            return
+
+        # Windows: event.delta, Linux: event.num
+        if event.delta:
+            delta = event.delta / 120
+        elif event.num == 4:
+            delta = 1
+        else:
+            delta = -1
+
+        # 調整縮放等級
+        old_zoom = self.zoom_level
+        self.zoom_level *= 1.2 if delta > 0 else 0.8
+        self.zoom_level = max(0.5, min(5.0, self.zoom_level))  # 限制 0.5x ~ 5x
+
+        if old_zoom != self.zoom_level:
+            self.show_preview(self.screenshot)
+            self.status_var.set(f"縮放: {self.zoom_level:.1f}x")
 
     def on_drag_start(self, event):
         if self.screenshot is None:
