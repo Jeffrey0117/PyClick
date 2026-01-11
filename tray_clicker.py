@@ -29,25 +29,33 @@ MOUSEEVENTF_LEFTUP = 0x0004
 
 
 def click_no_focus(x, y, instant=True):
-    """點擊但不改變焦點"""
+    """點擊但不改變焦點和前景視窗"""
     # 儲存原本游標位置
     original_pos = pyautogui.position()
 
+    # 儲存當前前景視窗（正在使用的視窗）
+    foreground_hwnd = user32.GetForegroundWindow()
+
     # 移動游標
-    ctypes.windll.user32.SetCursorPos(x, y)
+    user32.SetCursorPos(x, y)
 
     if instant:
         # 瞬間模式：無延遲
         user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
         user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-        ctypes.windll.user32.SetCursorPos(original_pos[0], original_pos[1])
     else:
         # 穩定模式：有延遲確保點擊被偵測
         user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
         time.sleep(0.01)
         user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
         time.sleep(0.02)
-        ctypes.windll.user32.SetCursorPos(original_pos[0], original_pos[1])
+
+    # 游標回原位
+    user32.SetCursorPos(original_pos[0], original_pos[1])
+
+    # 恢復前景視窗焦點
+    if foreground_hwnd:
+        user32.SetForegroundWindow(foreground_hwnd)
 
 
 class TrayClicker:
