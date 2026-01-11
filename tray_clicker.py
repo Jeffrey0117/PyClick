@@ -776,12 +776,6 @@ class TrayClicker:
         """自動偵測（不搶焦點）"""
         while self.running and self.mode == "auto":
             try:
-                # 連續模式跳過冷卻
-                if not self.continuous_click:
-                    if time.time() - self.last_click_time < self.click_cooldown:
-                        time.sleep(0.1)
-                        continue
-
                 with mss.mss() as sct:
                     monitor = sct.monitors[0]
                     screen = np.array(sct.grab(monitor))
@@ -803,16 +797,20 @@ class TrayClicker:
                 _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
                 if max_val >= 0.7:
-                    th, tw = self.template.shape[:2]
-                    cx = max_loc[0] + tw // 2 + ox
-                    cy = max_loc[1] + th // 2 + oy
+                    # 檢查冷卻（連續模式跳過冷卻檢查）
+                    cooldown_passed = self.continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
 
-                    # 使用不搶焦點的點擊
-                    click_no_focus(cx, cy, self.instant_click)
-                    self.increment_click_count()
+                    if cooldown_passed:
+                        th, tw = self.template.shape[:2]
+                        cx = max_loc[0] + tw // 2 + ox
+                        cy = max_loc[1] + th // 2 + oy
 
-                    self.last_click_time = time.time()
-                    self.last_screen_hash = None
+                        # 使用不搶焦點的點擊
+                        click_no_focus(cx, cy, self.instant_click)
+                        self.increment_click_count()
+
+                        self.last_click_time = time.time()
+                        self.last_screen_hash = None
 
                 time.sleep(self.auto_interval)
 
