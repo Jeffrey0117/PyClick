@@ -527,9 +527,9 @@ class TrayClicker:
         toast.geometry(f"250x40+{x}+{y}")
 
         # 樣式
-        frame = tk.Frame(toast, bg="#333", padx=15, pady=8)
+        frame = tk.Frame(toast, bg="#2E7D32", padx=15, pady=8)
         frame.pack(fill="both", expand=True)
-        tk.Label(frame, text=message, bg="#333", fg="#4CAF50",
+        tk.Label(frame, text=message, bg="#2E7D32", fg="white",
                  font=("Microsoft JhengHei", 10, "bold")).pack()
 
         # 自動消失

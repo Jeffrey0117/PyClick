@@ -1,192 +1,112 @@
-# PyClick 智能點擊器
+<p align="center">
+  <img src="doc/logo.png" width="120" alt="PyClick Logo">
+</p>
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
-![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
+<h1 align="center">PyClick</h1>
 
-一款 Windows 平台的智能自動點擊工具，透過 OpenCV 圖像辨識技術自動偵測並點擊螢幕上的目標。支援模板匹配、自動模式、熱鍵觸發，並具備系統托盤常駐功能。
+<p align="center">
+  <strong>Windows 智能自動點擊器</strong><br>
+  看到圖 → 點過去 → 按按鍵，就這麼簡單
+</p>
 
-## 功能特色
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white">
+  <img src="https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white">
+  <img src="https://img.shields.io/badge/License-MIT-green">
+</p>
 
-- **圖像模板匹配** - 使用 OpenCV 進行高精度模板比對（相似度門檻 70%）
-- **藍色區域偵測** - 自動偵測螢幕上的藍色元素，方便快速選取按鈕
-- **多種點擊模式**
-  - 關閉模式：停止所有自動點擊
-  - 熱鍵模式：按下 F6 手動觸發找圖點擊
-  - 自動模式：持續掃描螢幕，找到目標自動點擊
-- **無焦點點擊** - 使用 Windows 底層 API，點擊時不會搶走其他視窗焦點
-- **連續點擊** - 開啟後可連續點擊同一目標，跳過冷卻時間
-- **瞬間點擊** - 可選擇瞬間或穩定點擊模式
-- **畫面 Hash 比對** - 螢幕沒變化就跳過模板匹配，降低 CPU 使用率
-- **系統托盤常駐** - 最小化後常駐托盤，不佔用工作列空間
-- **模板管理** - 儲存、載入、刪除模板，支援設定預設模板
-- **點擊統計** - 記錄本次執行的點擊次數
+---
 
-## 安裝步驟
+## What is PyClick?
 
-### 1. 確認 Python 版本
+PyClick 是一款輕量級的自動點擊工具。你只需要：
 
-需要 Python 3.8 或更新版本。
+1. **截圖** — 擷取螢幕畫面
+2. **框選** — 選擇要點擊的目標
+3. **設定動作** — 點幾下？按什麼鍵？
+4. **開啟自動** — 剩下的交給 PyClick
 
-```bash
-python --version
-```
+適合自動化重複操作，例如 CLI 確認、網頁按鈕、遊戲輔助等。
 
-### 2. 複製專案
+---
 
-```bash
-git clone https://github.com/yourusername/pyclick.git
-cd pyclick
-```
+## Features
 
-### 3. 安裝相依套件
-
-```bash
-pip install -r requirements.txt
-```
-
-### 相依套件清單
-
-| 套件 | 說明 |
+| 功能 | 說明 |
 |------|------|
-| `mss` | 高效能螢幕截圖 |
-| `opencv-python` | 圖像處理與模板匹配 |
-| `numpy` | 數值運算 |
-| `pyautogui` | 滑鼠控制 |
-| `Pillow` | 圖像顯示與處理 |
-| `keyboard` | 全域熱鍵監聽 |
-| `pystray` | 系統托盤圖示 |
+| **圖像辨識** | OpenCV 模板匹配，70% 相似度即觸發 |
+| **腳本系統** | 儲存多組設定，一鍵切換 |
+| **多次點擊** | 點 1~N 下，自訂間隔 |
+| **連續按鍵** | 點完自動按 Enter/Tab/方向鍵 |
+| **不搶焦點** | 點擊不打斷你正在打的字 |
+| **托盤常駐** | 最小化到系統托盤，隨時待命 |
 
-## 使用說明
+---
 
-### 啟動程式
+## Quick Start
 
 ```bash
+# 安裝
+git clone https://github.com/Jeffrey0117/PyClick.git
+cd PyClick
+pip install -r requirements.txt
+
+# 啟動
 python tray_clicker.py
 ```
 
-### 基本操作流程
+---
 
-1. **截圖** - 點擊「1. 截圖」按鈕擷取當前螢幕
-2. **偵測藍色**（選用）- 點擊「2. 偵測藍色」自動標示藍色區域
-3. **框選目標** - 在預覽區拖曳滑鼠框選要點擊的目標
-4. **儲存選取** - 點擊綠色的「3. 儲存選取」按鈕確認模板
-5. **測試找圖** - 點擊「測試找圖」驗證模板是否正確
-6. **選擇模式** - 選擇「熱鍵 (F6)」或「自動點擊」模式
-7. **開始使用** - 程式會自動偵測並點擊目標
+## Usage
 
-### 操作提示
+### 建立腳本
 
-- 選取範圍適中即可，太小容易誤判、太大會影響效能
-- 自動模式啟動後視窗會自動縮小到托盤，避免點到自己
-- 雙擊托盤圖示可重新開啟主面板
-- 滑鼠移到螢幕左上角可緊急中斷（FAILSAFE 機制）
+```
+截圖 → 框選目標 → 設定動作 → 另存腳本
+```
 
-## 快捷鍵說明
+### 動作設定
 
-| 快捷鍵 | 功能 |
-|--------|------|
-| `F6` | 手動觸發找圖點擊（熱鍵模式下） |
-| `滾輪` | 縮放預覽圖片（0.5x ~ 5x） |
-| `Alt + 拖曳` | 平移預覽圖片 |
-| `中鍵拖曳` | 平移預覽圖片 |
+```
+點擊 [2] 次    間隔 [0.1] 秒    然後按 [Enter]
+```
 
-## 設定選項
+### 模式
 
-### 掃描間隔
-
-自動模式下的掃描頻率：
-
-| 設定 | 說明 |
+| 模式 | 說明 |
 |------|------|
-| 0.3 秒 | 快速反應，適合需要即時點擊的場景 |
-| 0.5 秒 | 標準模式（預設） |
-| 1.0 秒 | 省電模式 |
-| 2.0 秒 | 超省電模式 |
+| 停用 | 暫停腳本 |
+| 熱鍵 | 按 F6 手動觸發 |
+| 自動 | 持續掃描，找到就點 |
 
-### 瞬間點擊
+---
 
-- **開啟**（預設）：點擊無延遲，速度最快
-- **關閉**：點擊有微小延遲（約 30ms），確保被目標程式偵測到
-
-### 連續點擊
-
-- **開啟**：找到目標就連續點擊，跳過冷卻時間
-- **關閉**（預設）：每次點擊後需等待冷卻（1 秒）
-
-### 模板管理
-
-在設定面板（點擊「設定」按鈕）中可以：
-
-- **儲存模板** - 將當前模板儲存並命名
-- **載入模板** - 載入已儲存的模板
-- **設為預設** - 設定預設模板，啟動時自動詢問是否載入
-- **刪除模板** - 刪除不需要的模板
-
-模板會儲存在 `templates/` 資料夾中。
-
-## 托盤圖示說明
-
-| 圖示顏色 | 文字 | 狀態 |
-|----------|------|------|
-| 藍色 | `?` | 尚未設定模板 |
-| 藍色 | `O` | 已設定模板，模式關閉 |
-| 橘色 | `H` | 熱鍵模式運作中 |
-| 綠色 | `A` | 自動點擊模式運作中 |
-
-## 檔案結構
+## File Structure
 
 ```
-pyclick/
-├── tray_clicker.py      # 主程式（完整面板 + 托盤）
-├── requirements.txt     # 相依套件清單
-├── config.json          # 設定檔（預設模板等）
-├── templates/           # 已儲存的模板圖片
-│   └── *.png
-└── README.md            # 說明文件
+PyClick/
+├── tray_clicker.py      # 主程式
+├── templates/           # 模板圖片
+├── simple_scripts/      # 腳本設定
+└── config.json          # 全域設定
 ```
 
-## 螢幕截圖
+---
 
-### 主面板
+## Requirements
 
-![主面板](screenshots/main-panel.png)
+- Windows 10/11
+- Python 3.8+
+- 相依套件：`mss` `opencv-python` `numpy` `pyautogui` `Pillow` `keyboard` `pystray`
 
-*主面板包含截圖、偵測、儲存功能，以及模式選擇和設定選項*
+---
 
-### 框選目標
+## License
 
-![框選目標](screenshots/selection.png)
+MIT
 
-*在預覽區拖曳框選要點擊的目標區域*
+---
 
-### 系統托盤
-
-![系統托盤](screenshots/tray-icon.png)
-
-*右鍵托盤圖示可快速切換模式*
-
-### 設定面板
-
-![設定面板](screenshots/settings.png)
-
-*設定面板包含功績統計、模板管理、個人化設定*
-
-> 注意：請自行建立 `screenshots/` 資料夾並加入截圖
-
-## 系統需求
-
-- **作業系統**：Windows 10 / 11（使用 Windows API）
-- **Python**：3.8 或更新版本
-- **螢幕**：支援多螢幕環境
-
-## 注意事項
-
-- 本程式僅供自動化輔助用途
-- 使用時請遵守相關軟體的服務條款
-- 部分遊戲或應用程式可能會偵測自動點擊行為
-- `pyautogui.FAILSAFE = True`：滑鼠移到左上角可緊急中斷
-
-## 授權
-
-MIT License
+<p align="center">
+  <sub>Built with Claude Code</sub>
+</p>
