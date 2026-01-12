@@ -239,6 +239,7 @@ class TrayClicker:
 
         ttk.Separator(row0, orient="vertical").pack(side="left", fill="y", padx=10)
         ttk.Button(row0, text="📜 進階編輯", command=self.open_block_editor, width=12).pack(side="left", padx=5)
+        ttk.Button(row0, text="📦 導出 EXE", command=self.export_exe, width=12).pack(side="left", padx=5)
 
         # 第一排：操作流程
         row1 = ttk.Frame(ctrl_frame)
@@ -1270,6 +1271,27 @@ class TrayClicker:
         except ImportError as e:
             from tkinter import messagebox
             messagebox.showerror("錯誤", f"無法載入積木編輯器: {e}")
+
+    def export_exe(self):
+        """導出為獨立 EXE"""
+        from tkinter import messagebox
+
+        # 檢查是否有腳本和模板
+        if not self.current_script.template_path or not os.path.exists(self.current_script.template_path):
+            messagebox.showwarning("提示", "請先儲存腳本和模板！", parent=self.root)
+            return
+
+        if not self.current_script.name or self.current_script.name == "未命名":
+            messagebox.showwarning("提示", "請先儲存腳本（按「另存」）", parent=self.root)
+            return
+
+        try:
+            from exporter import export_script
+            export_script(self.root, self.current_script, self.current_script.template_path)
+        except ImportError as e:
+            messagebox.showerror("錯誤", f"無法載入導出器: {e}")
+        except Exception as e:
+            messagebox.showerror("錯誤", f"導出失敗: {e}")
 
     def test_find(self):
         """測試找圖"""
