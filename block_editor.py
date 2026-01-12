@@ -357,10 +357,14 @@ class BlockWidget(tk.Frame):
     def _on_right_click(self, event):
         """右鍵選單"""
         menu = tk.Menu(self, tearoff=0)
-        menu.add_command(label="編輯參數", command=lambda: self.editor.edit_block(self.block))
-        menu.add_command(label="複製", command=lambda: self.editor.copy_block(self.block))
+        menu.add_command(label="📝 編輯參數", command=lambda: self.editor.edit_block(self.block))
         menu.add_separator()
-        menu.add_command(label="刪除", command=lambda: self.editor.delete_block(self.block))
+        menu.add_command(label="📋 複製", command=lambda: self.editor.copy_block(self.block))
+        menu.add_separator()
+        menu.add_command(label="⬆️ 上移", command=lambda: self.editor.move_block_up(self.block))
+        menu.add_command(label="⬇️ 下移", command=lambda: self.editor.move_block_down(self.block))
+        menu.add_separator()
+        menu.add_command(label="🗑️ 刪除", command=lambda: self.editor.delete_block(self.block))
         menu.tk_popup(event.x_root, event.y_root)
 
     def _on_delete(self, event):
@@ -461,6 +465,22 @@ class BlockEditor:
             status_frame, textvariable=self.status_var,
             bg="#3D3D3D", fg="#AAA", font=("", 9)
         ).pack(side="left", padx=10, pady=5)
+
+        # === 快捷鍵 ===
+        self._setup_shortcuts()
+
+    def _setup_shortcuts(self):
+        """設定快捷鍵"""
+        self.window.bind("<Control-s>", lambda e: self.save_script())
+        self.window.bind("<Control-S>", lambda e: self.save_script())
+        self.window.bind("<F5>", lambda e: self.run_script())
+        self.window.bind("<Escape>", lambda e: self.stop_script())
+        self.window.bind("<Delete>", lambda e: self._delete_selected())
+
+    def _delete_selected(self):
+        """刪除選中的積木"""
+        if self.selected_block:
+            self.delete_block(self.selected_block)
 
     def _create_block_palette(self, parent):
         """建立積木庫"""
@@ -632,13 +652,44 @@ class BlockEditor:
             self.refresh_script_view()
             self.status_var.set("已複製積木")
 
-    def delete_block(self, block):
+    def delete_block(self, block, confirm=True):
         """刪除積木"""
+        # 如果積木有子積木，要確認
+        if confirm and block.has_children() and block.children:
+            if not messagebox.askyesno("確認刪除", f"此積木包含 {len(block.children)} 個子積木，確定要刪除嗎？"):
+                return
+
         if self._remove_block(self.script.blocks, block):
             if self.selected_block == block:
                 self.selected_block = None
             self.refresh_script_view()
             self.status_var.set("已刪除積木")
+
+    def move_block_up(self, block):
+        """上移積木"""
+        idx = self._find_block_index(block)
+        if idx is not None and idx > 0:
+            # 不能移到觸發積木前面
+            if idx == 1 and self.script.blocks[0].is_trigger():
+                self.status_var.set("不能移到觸發積木前面")
+                return
+            self.script.blocks[idx], self.script.blocks[idx - 1] = \
+                self.script.blocks[idx - 1], self.script.blocks[idx]
+            self.refresh_script_view()
+            self.status_var.set("已上移")
+
+    def move_block_down(self, block):
+        """下移積木"""
+        idx = self._find_block_index(block)
+        if idx is not None and idx < len(self.script.blocks) - 1:
+            # 觸發積木不能下移
+            if block.is_trigger():
+                self.status_var.set("觸發積木必須在最前面")
+                return
+            self.script.blocks[idx], self.script.blocks[idx + 1] = \
+                self.script.blocks[idx + 1], self.script.blocks[idx]
+            self.refresh_script_view()
+            self.status_var.set("已下移")
 
     def _find_block_index(self, block, blocks=None):
         """尋找積木索引"""
