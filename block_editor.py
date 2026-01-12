@@ -375,6 +375,18 @@ class BlockWidget(tk.Frame):
         """刪除積木"""
         self.editor.delete_block(self.block)
 
+    def set_executing(self, executing=True):
+        """設定執行狀態樣式"""
+        if executing:
+            self.frame.configure(highlightbackground="#4CAF50", highlightthickness=3)
+        else:
+            self.frame.configure(highlightthickness=0)
+
+    def set_executed(self):
+        """設定已執行樣式（變灰）"""
+        self.frame.configure(highlightthickness=0)
+        # 可以加淡化效果，但暫時保持簡單
+
     def _on_drag_start(self, event):
         """開始拖曳"""
         self.drag_start_y = event.y_root
@@ -824,6 +836,23 @@ class BlockEditor:
             self.drag_indicator.destroy()
             self.drag_indicator = None
 
+    def highlight_executing_block(self, block):
+        """高亮正在執行的積木"""
+        def _update():
+            for widget in self.block_widgets:
+                if widget.block == block:
+                    widget.set_executing(True)
+                else:
+                    widget.set_executing(False)
+        self.window.after(0, _update)
+
+    def clear_highlight(self):
+        """清除所有高亮"""
+        def _update():
+            for widget in self.block_widgets:
+                widget.set_executing(False)
+        self.window.after(0, _update)
+
     def _find_block_index(self, block, blocks=None):
         """尋找積木索引"""
         if blocks is None:
@@ -907,7 +936,11 @@ class BlockEditor:
             self.window.after(0, lambda: self.status_var.set(f"錯誤: {e}"))
         finally:
             self.running = False
-            self.window.after(0, lambda: self.status_var.set("執行完成"))
+            self.clear_highlight()
+            if not self.stop_flag:
+                self.window.after(0, lambda: self.status_var.set("執行完成"))
+            else:
+                self.window.after(0, lambda: self.status_var.set("已停止"))
 
     def run(self):
         """啟動編輯器"""
@@ -1219,6 +1252,9 @@ class ScriptRunner:
 
         action = block.type
         params = block.params
+
+        # 高亮當前積木
+        self.editor.highlight_executing_block(block)
 
         # 更新狀態
         self.editor.window.after(0, lambda: self.editor.status_var.set(f"執行: {block.get_label()}"))
