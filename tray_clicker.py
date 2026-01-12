@@ -151,7 +151,11 @@ class TrayClicker:
         self.last_click_time = 0
         self.instant_click = True  # 瞬間點擊模式
         self.continuous_click = False  # 連續點擊模式
-        self.total_clicks = 0  # 總點擊計數器
+        self.total_clicks = 0  # 本次啟動點擊計數
+        self.lifetime_clicks = 0  # 累計總點擊次數
+
+        # 設定檔路徑
+        self.config_path = os.path.join(os.path.dirname(__file__), "config.json")
 
         # 簡單腳本
         self.current_script = SimpleScript()
@@ -171,9 +175,40 @@ class TrayClicker:
         # 托盤
         self.icon = None
 
+        # 載入統計資料
+        self._load_stats()
+
         self.setup_gui()
         self.setup_tray()
         self.setup_hotkey()
+
+    def _load_stats(self):
+        """載入統計資料"""
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                    self.lifetime_clicks = config.get("lifetime_clicks", 0)
+                    self.sound_enabled = config.get("sound_enabled", True)
+            except Exception as e:
+                print(f"[PyClick] 載入設定失敗: {e}")
+
+    def _save_stats(self):
+        """儲存統計資料"""
+        try:
+            config = {}
+            if os.path.exists(self.config_path):
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+
+            config["lifetime_clicks"] = self.lifetime_clicks
+            config["sound_enabled"] = self.sound_enabled
+            config["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[PyClick] 儲存設定失敗: {e}")
 
     def setup_gui(self):
         """建立主面板"""
@@ -335,8 +370,8 @@ class TrayClicker:
         ttk.Checkbutton(bottom_frame, text="連續點擊", variable=self.continuous_var,
                         command=self.on_continuous_change).pack(side="left", padx=5)
 
-        # 音效提示選項
-        self.sound_var = tk.BooleanVar(value=True)
+        # 音效提示選項（從設定載入）
+        self.sound_var = tk.BooleanVar(value=self.sound_enabled)
         ttk.Checkbutton(bottom_frame, text="提示音", variable=self.sound_var,
                         command=self.on_sound_change).pack(side="left", padx=5)
 
@@ -484,6 +519,7 @@ class TrayClicker:
     def on_sound_change(self):
         """音效提示改變"""
         self.sound_enabled = self.sound_var.get()
+        self._save_stats()  # 儲存設定
         if self.sound_enabled:
             winsound.Beep(1000, 50)  # 播放示範音
             self.status_var.set("提示音: 開啟")
@@ -661,7 +697,12 @@ class TrayClicker:
     def increment_click_count(self, count=1):
         """增加點擊計數並更新 UI"""
         self.total_clicks += count
+        self.lifetime_clicks += count
         self.root.after(0, self._update_counter_ui)
+
+        # 每 10 次點擊儲存一次（避免頻繁寫入）
+        if self.total_clicks % 10 == 0:
+            self._save_stats()
 
     def _update_counter_ui(self):
         """更新計數器 UI"""
@@ -682,15 +723,16 @@ class TrayClicker:
         stats_frame = ttk.Frame(notebook, padding=20)
         notebook.add(stats_frame, text="📊 功績")
 
-        # 大數字顯示
+        # 大數字顯示（累計總點擊）
         tk.Label(stats_frame, text="已幫你點擊", font=("", 14), fg="#666").pack(pady=(20, 5))
-        tk.Label(stats_frame, text=str(self.total_clicks), font=("Consolas", 72, "bold"), fg="#4CAF50").pack()
+        tk.Label(stats_frame, text=str(self.lifetime_clicks), font=("Consolas", 72, "bold"), fg="#4CAF50").pack()
         tk.Label(stats_frame, text="次", font=("", 14), fg="#666").pack(pady=(5, 30))
 
         # 統計資訊
         info_frame = ttk.LabelFrame(stats_frame, text="統計", padding=10)
         info_frame.pack(fill="x", pady=10)
-        ttk.Label(info_frame, text=f"本次啟動點擊: {self.total_clicks} 次").pack(anchor="w")
+        ttk.Label(info_frame, text=f"累計總點擊: {self.lifetime_clicks} 次", font=("", 10, "bold")).pack(anchor="w")
+        ttk.Label(info_frame, text=f"本次啟動: {self.total_clicks} 次").pack(anchor="w")
         ttk.Label(info_frame, text=f"當前模式: {self.mode}").pack(anchor="w")
         ttk.Label(info_frame, text=f"掃描間隔: {self.auto_interval} 秒").pack(anchor="w")
 
@@ -1395,6 +1437,7 @@ class TrayClicker:
 
     def quit_app(self, icon=None, item=None):
         """結束"""
+        self._save_stats()  # 儲存統計資料
         self.running = False
         self.mode = "off"
         keyboard.unhook_all()
