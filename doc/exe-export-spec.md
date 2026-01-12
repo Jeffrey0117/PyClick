@@ -306,28 +306,71 @@ def get_resource_path(relative_path):
 
 ---
 
-## 8. 實作優先順序
+## 8. 確認的設計決策
 
-### Phase 1：基礎導出（MVP）
-1. 實作 `lite_runner.py` 精簡執行引擎
-2. 實作單一模板 + 簡單動作的導出
-3. 基本托盤 UI
-4. PyInstaller 整合
+### 8.1 可調參數 ✅
+導出的 EXE 允許使用者調整：
+- 掃描間隔
+- 點擊次數
+- 點擊間隔
+- 相似度門檻
 
-### Phase 2：設定介面
-1. 導出 EXE 的設定面板
-2. 可調整參數功能
-3. 開機啟動支援
+### 8.2 輕度加密 ✅
+保護腳本內容不被輕易讀取：
 
-### Phase 3：完善體驗
-1. 導出選項 UI
-2. 進度顯示
-3. 體積優化
-4. 錯誤處理
+```python
+# 使用 base64 + 簡單混淆
+import base64
+import zlib
+
+def encode_config(config_dict):
+    """加密設定"""
+    json_str = json.dumps(config_dict)
+    compressed = zlib.compress(json_str.encode())
+    encoded = base64.b64encode(compressed)
+    # 簡單混淆：反轉 + 加鹽
+    return encoded[::-1] + b"_PYC_"
+
+def decode_config(encoded_data):
+    """解密設定"""
+    # 移除鹽值並反轉
+    cleaned = encoded_data[:-5][::-1]
+    compressed = base64.b64decode(cleaned)
+    json_str = zlib.decompress(compressed).decode()
+    return json.loads(json_str)
+```
+
+### 8.3 腳本類型支援
+| 類型 | MVP | 未來 |
+|------|-----|------|
+| 簡單腳本 (SimpleScript) | ✅ | ✅ |
+| 積木腳本 (BlockScript) | ❌ | ✅ |
 
 ---
 
-## 附錄：相關檔案
+## 9. 實作優先順序
+
+### Phase 1：基礎導出（MVP）
+- [x] 撰寫規格文檔
+- [ ] 實作 `lite_runner.py` 精簡執行引擎
+- [ ] 實作單一模板 + 簡單動作的導出
+- [ ] 基本托盤 UI
+- [ ] PyInstaller 整合
+
+### Phase 2：設定介面
+- [ ] 導出 EXE 的設定面板
+- [ ] 可調整參數功能
+- [ ] 開機啟動支援
+
+### Phase 3：完善體驗
+- [ ] 導出選項 UI
+- [ ] 進度顯示
+- [ ] 體積優化
+- [ ] 錯誤處理
+
+---
+
+## 10. 相關檔案
 
 - `tray_clicker.py` - 主程式（參考其托盤與找圖邏輯）
 - `block_editor.py` - 積木編輯器（未來支援複雜腳本導出）
