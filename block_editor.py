@@ -301,6 +301,10 @@ class BlockWidget(tk.Frame):
             widget.bind("<Button-1>", self._on_click)
             widget.bind("<Double-Button-1>", self._on_double_click)
             widget.bind("<Button-3>", self._on_right_click)
+            # 拖曳事件
+            widget.bind("<ButtonPress-1>", self._on_drag_start)
+            widget.bind("<B1-Motion>", self._on_drag_motion)
+            widget.bind("<ButtonRelease-1>", self._on_drag_end)
 
         # 刪除按鈕
         del_btn = tk.Label(
@@ -371,6 +375,27 @@ class BlockWidget(tk.Frame):
         """刪除積木"""
         self.editor.delete_block(self.block)
 
+    def _on_drag_start(self, event):
+        """開始拖曳"""
+        self.drag_start_y = event.y_root
+        self.dragging = False
+
+    def _on_drag_motion(self, event):
+        """拖曳中"""
+        if not hasattr(self, 'drag_start_y'):
+            return
+
+        # 移動超過 10 像素才算拖曳
+        if abs(event.y_root - self.drag_start_y) > 10:
+            self.dragging = True
+            self.editor.on_block_drag(self.block, event.y_root)
+
+    def _on_drag_end(self, event):
+        """拖曳結束"""
+        if hasattr(self, 'dragging') and self.dragging:
+            self.editor.on_block_drop(self.block, event.y_root)
+        self.dragging = False
+
 
 # ============================================================
 # 積木編輯器主視窗
@@ -388,6 +413,11 @@ class BlockEditor:
         self.selected_block = None
         self.running = False
         self.stop_flag = False
+
+        # 拖曳狀態
+        self.drag_block = None
+        self.drag_indicator = None
+        self.block_widgets = []
 
         # 確保目錄存在
         os.makedirs(self.scripts_dir, exist_ok=True)
@@ -595,6 +625,8 @@ class BlockEditor:
         for widget in self.script_container.winfo_children():
             widget.destroy()
 
+        self.block_widgets = []
+
         if not self.script.blocks:
             self._show_empty_hint()
             return
@@ -602,6 +634,7 @@ class BlockEditor:
         for block in self.script.blocks:
             widget = BlockWidget(self.script_container, block, self)
             widget.pack(fill="x", pady=2)
+            self.block_widgets.append(widget)
 
     def add_block_from_palette(self, block_type):
         """從積木庫添加積木"""
@@ -690,6 +723,106 @@ class BlockEditor:
                 self.script.blocks[idx + 1], self.script.blocks[idx]
             self.refresh_script_view()
             self.status_var.set("已下移")
+
+    def on_block_drag(self, block, y_pos):
+        """積木拖曳中"""
+        self.drag_block = block
+
+        # 計算目標位置
+        target_idx = self._get_drop_index(y_pos)
+
+        # 顯示插入指示線
+        self._show_drop_indicator(target_idx)
+        self.status_var.set(f"拖曳中... 放開以移動到位置 {target_idx + 1}")
+
+    def on_block_drop(self, block, y_pos):
+        """積木放下"""
+        if not self.drag_block:
+            return
+
+        target_idx = self._get_drop_index(y_pos)
+        current_idx = self._find_block_index(block)
+
+        # 隱藏指示線
+        self._hide_drop_indicator()
+
+        if current_idx is None or target_idx == current_idx:
+            self.drag_block = None
+            return
+
+        # 不能移到觸發積木前面
+        if target_idx == 0 and self.script.blocks and self.script.blocks[0].is_trigger() and not block.is_trigger():
+            self.status_var.set("不能移到觸發積木前面")
+            self.drag_block = None
+            return
+
+        # 觸發積木只能在最前面
+        if block.is_trigger() and target_idx > 0:
+            self.status_var.set("觸發積木必須在最前面")
+            self.drag_block = None
+            return
+
+        # 移動積木
+        self.script.blocks.pop(current_idx)
+        if target_idx > current_idx:
+            target_idx -= 1
+        self.script.blocks.insert(target_idx, block)
+
+        self.drag_block = None
+        self.refresh_script_view()
+        self.status_var.set("已移動積木")
+
+    def _get_drop_index(self, y_pos):
+        """根據 Y 座標計算放置索引"""
+        if not self.block_widgets:
+            return 0
+
+        for i, widget in enumerate(self.block_widgets):
+            try:
+                widget_y = widget.winfo_rooty()
+                widget_h = widget.winfo_height()
+                if y_pos < widget_y + widget_h // 2:
+                    return i
+            except:
+                pass
+
+        return len(self.script.blocks)
+
+    def _show_drop_indicator(self, index):
+        """顯示放置指示線"""
+        self._hide_drop_indicator()
+
+        if not self.block_widgets:
+            return
+
+        # 在目標位置顯示藍線
+        try:
+            if index < len(self.block_widgets):
+                target_widget = self.block_widgets[index]
+                self.drag_indicator = tk.Frame(
+                    self.script_container, bg="#2196F3", height=3
+                )
+                self.drag_indicator.place(
+                    x=0, y=target_widget.winfo_y(), relwidth=1
+                )
+            elif self.block_widgets:
+                # 放在最後
+                last_widget = self.block_widgets[-1]
+                self.drag_indicator = tk.Frame(
+                    self.script_container, bg="#2196F3", height=3
+                )
+                self.drag_indicator.place(
+                    x=0, y=last_widget.winfo_y() + last_widget.winfo_height(),
+                    relwidth=1
+                )
+        except:
+            pass
+
+    def _hide_drop_indicator(self):
+        """隱藏放置指示線"""
+        if self.drag_indicator:
+            self.drag_indicator.destroy()
+            self.drag_indicator = None
 
     def _find_block_index(self, block, blocks=None):
         """尋找積木索引"""
