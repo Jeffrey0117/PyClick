@@ -182,6 +182,7 @@ class TrayClicker:
 
         ttk.Button(row0, text="💾 儲存", command=self.save_script, width=8).pack(side="left", padx=2)
         ttk.Button(row0, text="📝 另存", command=self.save_script_as, width=8).pack(side="left", padx=2)
+        ttk.Button(row0, text="⭐ 預設", command=self.set_default_script, width=8).pack(side="left", padx=2)
         ttk.Button(row0, text="🗑 刪除", command=self.delete_script, width=8).pack(side="left", padx=2)
 
         ttk.Separator(row0, orient="vertical").pack(side="left", fill="y", padx=10)
@@ -604,6 +605,28 @@ class TrayClicker:
         self._update_ui_from_script()
         self.status_var.set(f"已刪除: {name}")
 
+    def set_default_script(self):
+        """設定當前腳本為預設（啟動時自動選中）"""
+        name = self.script_var.get()
+        if name == "(新腳本)":
+            self.status_var.set("請先儲存腳本")
+            return
+
+        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+
+        config = {}
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+
+        config["default_script"] = name
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+
+        self.status_var.set(f"已設為預設腳本: {name}")
+        self._show_toast(f"⭐ {name} 設為預設")
+
     def increment_click_count(self, count=1):
         """增加點擊計數並更新 UI"""
         self.total_clicks += count
@@ -801,37 +824,86 @@ class TrayClicker:
 
         self.status_var.set(f"已設為預設: {name}")
 
-    def _check_default_template(self):
-        """啟動時檢查並詢問是否載入預設模板"""
-        import os
-        import json
-        from tkinter import messagebox
+    def _check_default_script(self):
+        """啟動時檢查並詢問要載入哪個腳本"""
+        # 取得所有腳本
+        scripts = []
+        if os.path.exists(self.scripts_dir):
+            for f in os.listdir(self.scripts_dir):
+                if f.endswith(".json"):
+                    scripts.append(f[:-5])
 
+        if not scripts:
+            return  # 沒有腳本就跳過
+
+        # 檢查有沒有預設腳本
         config_path = os.path.join(os.path.dirname(__file__), "config.json")
-        if not os.path.exists(config_path):
-            return
+        default_script = None
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                default_script = config.get("default_script")
 
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
+        # 顯示選擇對話框
+        self._show_script_select_dialog(scripts, default_script)
 
-        default_name = config.get("default_template")
-        if not default_name:
-            return
+    def _show_script_select_dialog(self, scripts, default_script=None):
+        """顯示腳本選擇對話框"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("載入腳本")
+        dialog.geometry("300x350")
+        dialog.transient(self.root)
+        dialog.grab_set()
 
-        template_dir = os.path.join(os.path.dirname(__file__), "templates")
-        filepath = os.path.join(template_dir, f"{default_name}.png")
+        # 置中
+        dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - 300) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 350) // 2
+        dialog.geometry(f"+{x}+{y}")
 
-        if not os.path.exists(filepath):
-            return
+        tk.Label(dialog, text="選擇要載入的腳本", font=("Microsoft JhengHei", 12, "bold")).pack(pady=15)
 
-        # 詢問是否載入
-        if messagebox.askyesno("載入預設模板", f"是否載入預設模板「{default_name}」？"):
-            self.template = cv2.imread(filepath)
-            if self.template is not None:
-                self.update_icon()
-                h, w = self.template.shape[:2]
-                self.template_info.config(text=f"{default_name} ({w}x{h})", foreground="green")
-                self.status_var.set(f"已載入預設模板: {default_name}")
+        # 列表
+        list_frame = tk.Frame(dialog)
+        list_frame.pack(fill="both", expand=True, padx=20, pady=5)
+
+        listbox = tk.Listbox(list_frame, font=("", 11), selectmode="single")
+        listbox.pack(side="left", fill="both", expand=True)
+
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
+        scrollbar.pack(side="right", fill="y")
+        listbox.config(yscrollcommand=scrollbar.set)
+
+        for s in scripts:
+            listbox.insert(tk.END, s)
+            if s == default_script:
+                listbox.selection_set(tk.END)
+
+        # 如果有預設就選中，沒有就選第一個
+        if not listbox.curselection() and scripts:
+            listbox.selection_set(0)
+
+        def on_load():
+            selection = listbox.curselection()
+            if selection:
+                name = listbox.get(selection[0])
+                dialog.destroy()
+                self.script_var.set(name)
+                self.on_script_select()
+
+        def on_skip():
+            dialog.destroy()
+
+        # 按鈕
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(pady=15)
+
+        tk.Button(btn_frame, text="載入", command=on_load, width=10,
+                  bg="#4CAF50", fg="white", font=("", 10)).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="跳過", command=on_skip, width=10).pack(side="left", padx=10)
+
+        # 雙擊載入
+        listbox.bind("<Double-Button-1>", lambda e: on_load())
 
     def set_auto_mode(self, icon=None, item=None):
         if self.template is None:
@@ -1296,7 +1368,7 @@ class TrayClicker:
         tray_thread.start()
 
         # 檢查預設模板
-        self.root.after(100, self._check_default_template)
+        self.root.after(100, self._check_default_script)
 
         # 主視窗
         self.root.mainloop()
