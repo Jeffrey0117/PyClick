@@ -253,7 +253,7 @@ class TrayClicker:
 
         # 重點：儲存按鈕（用醒目的 tk.Button）
         self.save_btn = tk.Button(row1, text="★ 3. 儲存選取 ★", command=self.save_template,
-                                   width=14, height=1, bg="#4CAF50", fg="white",
+                                   width=14, height=1, bg="#FF9800", fg="white",
                                    font=("", 10, "bold"), relief="raised", cursor="hand2")
         self.save_btn.pack(side="left", padx=10)
 
@@ -298,6 +298,16 @@ class TrayClicker:
         row3 = ttk.Frame(ctrl_frame)
         row3.pack(fill="x", padx=10, pady=5)
 
+        # 大大的開始/停止按鈕
+        self.start_btn = tk.Button(
+            row3, text="▶ 開始自動點擊", width=16, height=1,
+            bg="#4CAF50", fg="white", font=("Microsoft JhengHei", 11, "bold"),
+            relief="raised", cursor="hand2", command=self.toggle_auto_mode
+        )
+        self.start_btn.pack(side="left", padx=10)
+
+        ttk.Separator(row3, orient="vertical").pack(side="left", fill="y", padx=5)
+
         ttk.Label(row3, text="模式:").pack(side="left", padx=5)
 
         self.mode_var = tk.StringVar(value="off")
@@ -305,10 +315,10 @@ class TrayClicker:
                         command=self.on_mode_change).pack(side="left", padx=5)
         ttk.Radiobutton(row3, text="熱鍵 (F6)", variable=self.mode_var, value="hotkey",
                         command=self.on_mode_change).pack(side="left", padx=5)
-        ttk.Radiobutton(row3, text="🔥 自動點擊", variable=self.mode_var, value="auto",
+        ttk.Radiobutton(row3, text="自動", variable=self.mode_var, value="auto",
                         command=self.on_mode_change).pack(side="left", padx=5)
 
-        ttk.Separator(row3, orient="vertical").pack(side="left", fill="y", padx=10)
+        ttk.Separator(row3, orient="vertical").pack(side="left", fill="y", padx=5)
 
         ttk.Label(row3, text="掃描間隔:").pack(side="left", padx=5)
         self.interval_var = tk.StringVar(value="0.5")
@@ -475,6 +485,42 @@ class TrayClicker:
         self.root.withdraw()
         self.panel_visible = False
 
+    def toggle_auto_mode(self):
+        """切換自動模式（大按鈕用）"""
+        if self.mode == "auto":
+            # 停止
+            self.mode = "off"
+            self.mode_var.set("off")
+            self._update_start_button()
+            self.update_icon()
+            self.status_var.set("已停止")
+        else:
+            # 開始
+            if self.template is None:
+                self.status_var.set("請先儲存模板！")
+                return
+            self.mode = "auto"
+            self.mode_var.set("auto")
+            self._update_start_button()
+            self.update_icon()
+            self.start_auto_thread()
+            self.status_var.set("自動模式已開啟")
+            # 自動縮小避免點到自己
+            self.root.after(500, self.hide_to_tray)
+
+    def _update_start_button(self):
+        """更新開始按鈕外觀"""
+        if self.mode == "auto":
+            self.start_btn.config(
+                text="■ 停止", bg="#f44336",
+                font=("Microsoft JhengHei", 11, "bold")
+            )
+        else:
+            self.start_btn.config(
+                text="▶ 開始自動點擊", bg="#4CAF50",
+                font=("Microsoft JhengHei", 11, "bold")
+            )
+
     def on_mode_change(self):
         """模式改變"""
         new_mode = self.mode_var.get()
@@ -484,6 +530,7 @@ class TrayClicker:
             return
 
         self.mode = new_mode
+        self._update_start_button()
         self.update_icon()
 
         if self.mode == "auto":

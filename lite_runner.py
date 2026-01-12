@@ -279,18 +279,59 @@ class LiteRunner:
         ttk.Checkbutton(row4, text="執行前播放提示音",
                         variable=self.sound_var).pack(side="left")
 
+        # 控制區
+        control_frame = ttk.LabelFrame(self.root, text="控制", padding=15)
+        control_frame.pack(fill="x", padx=20, pady=10)
+
+        # 狀態顯示
+        status_row = ttk.Frame(control_frame)
+        status_row.pack(fill="x", pady=5)
+        ttk.Label(status_row, text="狀態:").pack(side="left")
+        self.status_label = tk.Label(
+            status_row,
+            text="已停止" if self.mode == "off" else "執行中",
+            fg="#D32F2F" if self.mode == "off" else "#388E3C",
+            font=("Microsoft JhengHei", 10, "bold")
+        )
+        self.status_label.pack(side="right")
+
+        # 開始/停止按鈕
+        control_btn_frame = ttk.Frame(control_frame)
+        control_btn_frame.pack(fill="x", pady=10)
+
+        self.start_btn = tk.Button(
+            control_btn_frame, text="▶ 開始",
+            command=self._start_from_ui, width=10,
+            bg="#4CAF50", fg="white", activebackground="#388E3C",
+            font=("Microsoft JhengHei", 9, "bold"), relief="flat"
+        )
+        self.start_btn.pack(side="left", padx=5, expand=True)
+
+        self.stop_btn = tk.Button(
+            control_btn_frame, text="■ 停止",
+            command=self._stop_from_ui, width=10,
+            bg="#F44336", fg="white", activebackground="#D32F2F",
+            font=("Microsoft JhengHei", 9, "bold"), relief="flat"
+        )
+        self.stop_btn.pack(side="left", padx=5, expand=True)
+
+        self._update_control_buttons()
+
         # 統計
         stats_frame = ttk.LabelFrame(self.root, text="統計", padding=15)
         stats_frame.pack(fill="x", padx=20, pady=10)
 
-        tk.Label(stats_frame, text=f"已點擊: {self.total_clicks} 次",
-                 font=("", 12)).pack()
+        self.stats_label = tk.Label(
+            stats_frame, text=f"已點擊: {self.total_clicks} 次",
+            font=("", 12)
+        )
+        self.stats_label.pack()
 
         # 按鈕
         btn_frame = ttk.Frame(self.root)
-        btn_frame.pack(pady=20)
+        btn_frame.pack(pady=15)
 
-        ttk.Button(btn_frame, text="套用", command=self._apply_settings,
+        ttk.Button(btn_frame, text="套用設定", command=self._apply_settings,
                    width=10).pack(side="left", padx=10)
         ttk.Button(btn_frame, text="關閉", command=self.root.destroy,
                    width=10).pack(side="left", padx=10)
@@ -306,6 +347,43 @@ class LiteRunner:
             self.sound_enabled = self.sound_var.get()
         except ValueError:
             pass
+
+    def _update_control_buttons(self):
+        """更新控制按鈕狀態"""
+        if self.mode == "auto":
+            self.start_btn.config(state="disabled", bg="#A5D6A7")
+            self.stop_btn.config(state="normal", bg="#F44336")
+            self.status_label.config(text="執行中", fg="#388E3C")
+        else:
+            self.start_btn.config(state="normal", bg="#4CAF50")
+            self.stop_btn.config(state="disabled", bg="#EF9A9A")
+            self.status_label.config(text="已停止", fg="#D32F2F")
+
+    def _start_from_ui(self):
+        """從 UI 啟動自動模式"""
+        if self.template is None:
+            return
+        self.mode = "auto"
+        self.start_auto_thread()
+        self.update_icon()
+        self._update_control_buttons()
+        self._start_stats_update()
+
+    def _stop_from_ui(self):
+        """從 UI 停止自動模式"""
+        self.mode = "off"
+        self.update_icon()
+        self._update_control_buttons()
+
+    def _start_stats_update(self):
+        """啟動統計更新"""
+        def update():
+            if self.root and self.root.winfo_exists():
+                if hasattr(self, 'stats_label'):
+                    self.stats_label.config(text=f"已點擊: {self.total_clicks} 次")
+                if self.mode == "auto":
+                    self.root.after(1000, update)
+        update()
 
     def start_auto_thread(self):
         """啟動自動執行緒"""
