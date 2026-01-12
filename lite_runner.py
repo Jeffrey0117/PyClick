@@ -392,9 +392,9 @@ class LiteRunner:
 
     def _execute_action(self, cx, cy):
         """執行點擊動作"""
-        # 播放提示音
+        # 播放提示音（非同步）
         if self.sound_enabled:
-            winsound.Beep(1000, 50)
+            threading.Thread(target=lambda: winsound.Beep(1000, 100), daemon=True).start()
 
         # 保存狀態
         original_pos = pyautogui.position()

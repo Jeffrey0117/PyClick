@@ -1389,7 +1389,7 @@ class TrayClicker:
         """執行動作序列：多次點擊 + 按鍵"""
         # 播放提示音（非同步，不阻塞）
         if self.sound_enabled:
-            winsound.Beep(1000, 50)  # 1000Hz, 50ms 短促叮聲
+            threading.Thread(target=lambda: winsound.Beep(1000, 100), daemon=True).start()
 
         click_count = self.current_script.click_count
         click_interval = self.current_script.click_interval
