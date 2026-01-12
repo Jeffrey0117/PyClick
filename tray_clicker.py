@@ -21,6 +21,7 @@ import hashlib
 import ctypes
 import os
 import json
+import winsound
 
 
 # ============================================================
@@ -68,6 +69,16 @@ pyautogui.FAILSAFE = True
 
 # Windows API for click without focus change
 user32 = ctypes.windll.user32
+
+# 單一實例鎖
+def check_single_instance():
+    """確保只有一個實例運行"""
+    mutex_name = "PyClick_SingleInstance_Mutex"
+    handle = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+    if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return False
+    return True
 kernel32 = ctypes.windll.kernel32
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
@@ -149,6 +160,9 @@ class TrayClicker:
 
         # 執行緒鎖
         self._lock = threading.Lock()
+
+        # 音效提示
+        self.sound_enabled = True
 
         # GUI
         self.root = None
@@ -321,6 +335,11 @@ class TrayClicker:
         ttk.Checkbutton(bottom_frame, text="連續點擊", variable=self.continuous_var,
                         command=self.on_continuous_change).pack(side="left", padx=5)
 
+        # 音效提示選項
+        self.sound_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(bottom_frame, text="提示音", variable=self.sound_var,
+                        command=self.on_sound_change).pack(side="left", padx=5)
+
         # 右側：設定按鈕 + 計數
         self.total_clicks_var = tk.StringVar(value="0")
         count_btn = tk.Button(bottom_frame, textvariable=self.total_clicks_var, width=6,
@@ -461,6 +480,15 @@ class TrayClicker:
             self.status_var.set("連續點擊: 開啟（找到就連點）")
         else:
             self.status_var.set("連續點擊: 關閉")
+
+    def on_sound_change(self):
+        """音效提示改變"""
+        self.sound_enabled = self.sound_var.get()
+        if self.sound_enabled:
+            winsound.Beep(1000, 50)  # 播放示範音
+            self.status_var.set("提示音: 開啟")
+        else:
+            self.status_var.set("提示音: 關閉")
 
     def on_action_change(self, event=None):
         """動作設定改變，更新當前腳本"""
@@ -1248,6 +1276,10 @@ class TrayClicker:
 
     def _execute_action_sequence(self, cx, cy):
         """執行動作序列：多次點擊 + 按鍵"""
+        # 播放提示音（非同步，不阻塞）
+        if self.sound_enabled:
+            winsound.Beep(1000, 50)  # 1000Hz, 50ms 短促叮聲
+
         click_count = self.current_script.click_count
         click_interval = self.current_script.click_interval
         after_key = self.current_script.after_key
@@ -1384,5 +1416,13 @@ class TrayClicker:
 
 
 if __name__ == "__main__":
-    app = TrayClicker()
-    app.run()
+    if not check_single_instance():
+        # 已有實例運行，顯示提示後退出
+        root = tk.Tk()
+        root.withdraw()
+        from tkinter import messagebox
+        messagebox.showwarning("PyClick", "PyClick 已在運行中！\n請查看系統托盤。")
+        root.destroy()
+    else:
+        app = TrayClicker()
+        app.run()
