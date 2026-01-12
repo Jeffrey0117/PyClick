@@ -395,6 +395,7 @@ class LiteRunner:
         # 播放提示音（非同步）
         if self.sound_enabled:
             threading.Thread(target=lambda: winsound.Beep(1000, 100), daemon=True).start()
+            time.sleep(0.3)  # 給人反應時間
 
         # 保存狀態
         original_pos = pyautogui.position()

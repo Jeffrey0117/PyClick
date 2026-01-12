@@ -1390,6 +1390,7 @@ class TrayClicker:
         # 播放提示音（非同步，不阻塞）
         if self.sound_enabled:
             threading.Thread(target=lambda: winsound.Beep(1000, 100), daemon=True).start()
+            time.sleep(0.3)  # 給人反應時間
 
         click_count = self.current_script.click_count
         click_interval = self.current_script.click_interval
