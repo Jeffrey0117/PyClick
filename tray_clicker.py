@@ -19,6 +19,50 @@ import keyboard
 import time
 import hashlib
 import ctypes
+import os
+import json
+
+
+# ============================================================
+# 簡單腳本資料結構
+# ============================================================
+
+class SimpleScript:
+    """簡單腳本：一個圖 + 一組動作"""
+
+    def __init__(self, name="未命名"):
+        self.name = name
+        self.template_path = ""      # 模板圖片路徑
+        self.click_count = 1         # 點擊次數
+        self.click_interval = 0.1    # 點擊間隔（秒）
+        self.after_key = ""          # 點完後按的鍵（空=不按）
+
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "template_path": self.template_path,
+            "click_count": self.click_count,
+            "click_interval": self.click_interval,
+            "after_key": self.after_key,
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        script = cls(data.get("name", "未命名"))
+        script.template_path = data.get("template_path", "")
+        script.click_count = data.get("click_count", 1)
+        script.click_interval = data.get("click_interval", 0.1)
+        script.after_key = data.get("after_key", "")
+        return script
+
+    def save(self, filepath):
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def load(cls, filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            return cls.from_dict(json.load(f))
 
 pyautogui.FAILSAFE = True
 
@@ -96,7 +140,12 @@ class TrayClicker:
         self.last_click_time = 0
         self.instant_click = True  # 瞬間點擊模式
         self.continuous_click = False  # 連續點擊模式
-        self.click_count = 0  # 點擊計數器
+        self.total_clicks = 0  # 總點擊計數器
+
+        # 簡單腳本
+        self.current_script = SimpleScript()
+        self.scripts_dir = os.path.join(os.path.dirname(__file__), "simple_scripts")
+        os.makedirs(self.scripts_dir, exist_ok=True)
 
         # GUI
         self.root = None
@@ -120,6 +169,24 @@ class TrayClicker:
         ctrl_frame = ttk.LabelFrame(self.root, text="控制")
         ctrl_frame.pack(fill="x", padx=10, pady=10)
 
+        # 第零排：腳本選擇
+        row0 = ttk.Frame(ctrl_frame)
+        row0.pack(fill="x", padx=10, pady=5)
+
+        ttk.Label(row0, text="腳本:").pack(side="left", padx=(0, 5))
+        self.script_var = tk.StringVar(value="(新腳本)")
+        self.script_combo = ttk.Combobox(row0, textvariable=self.script_var, width=20, state="readonly")
+        self.script_combo.pack(side="left", padx=2)
+        self.script_combo.bind("<<ComboboxSelected>>", self.on_script_select)
+        self._refresh_script_list()
+
+        ttk.Button(row0, text="💾 儲存", command=self.save_script, width=8).pack(side="left", padx=2)
+        ttk.Button(row0, text="📝 另存", command=self.save_script_as, width=8).pack(side="left", padx=2)
+        ttk.Button(row0, text="🗑 刪除", command=self.delete_script, width=8).pack(side="left", padx=2)
+
+        ttk.Separator(row0, orient="vertical").pack(side="left", fill="y", padx=10)
+        ttk.Button(row0, text="📜 進階編輯", command=self.open_block_editor, width=12).pack(side="left", padx=5)
+
         # 第一排：操作流程
         row1 = ttk.Frame(ctrl_frame)
         row1.pack(fill="x", padx=10, pady=5)
@@ -139,38 +206,67 @@ class TrayClicker:
         ttk.Separator(row1, orient="vertical").pack(side="left", fill="y", padx=10)
         ttk.Button(row1, text="🎯 測試找圖", command=self.test_find, width=12).pack(side="left", padx=5)
 
-        # 第二排：模式控制
+        # 第二排：動作設定
         row2 = ttk.Frame(ctrl_frame)
         row2.pack(fill="x", padx=10, pady=5)
 
-        ttk.Label(row2, text="模式:").pack(side="left", padx=5)
+        ttk.Label(row2, text="動作:").pack(side="left", padx=5)
+
+        ttk.Label(row2, text="點擊").pack(side="left", padx=(5, 2))
+        self.click_count_var = tk.StringVar(value="1")
+        click_count_combo = ttk.Combobox(row2, textvariable=self.click_count_var, width=3, state="readonly",
+                                          values=["1", "2", "3", "4", "5"])
+        click_count_combo.pack(side="left", padx=2)
+        click_count_combo.bind("<<ComboboxSelected>>", self.on_action_change)
+        ttk.Label(row2, text="次").pack(side="left", padx=(2, 10))
+
+        ttk.Label(row2, text="間隔:").pack(side="left", padx=5)
+        self.click_interval_var = tk.StringVar(value="0.1")
+        interval_combo = ttk.Combobox(row2, textvariable=self.click_interval_var, width=5, state="readonly",
+                                       values=["0.05", "0.1", "0.2", "0.3", "0.5"])
+        interval_combo.pack(side="left", padx=2)
+        interval_combo.bind("<<ComboboxSelected>>", self.on_action_change)
+        ttk.Label(row2, text="秒").pack(side="left", padx=(2, 10))
+
+        ttk.Label(row2, text="然後按:").pack(side="left", padx=5)
+        self.after_key_var = tk.StringVar(value="")
+        after_key_combo = ttk.Combobox(row2, textvariable=self.after_key_var, width=8, state="readonly",
+                                        values=["", "Enter", "Tab", "Space", "Escape"])
+        after_key_combo.pack(side="left", padx=2)
+        after_key_combo.bind("<<ComboboxSelected>>", self.on_action_change)
+
+        ttk.Button(row2, text="縮小到托盤", command=self.hide_to_tray).pack(side="right", padx=10)
+
+        # 第三排：模式控制
+        row3 = ttk.Frame(ctrl_frame)
+        row3.pack(fill="x", padx=10, pady=5)
+
+        ttk.Label(row3, text="模式:").pack(side="left", padx=5)
 
         self.mode_var = tk.StringVar(value="off")
-        ttk.Radiobutton(row2, text="關閉", variable=self.mode_var, value="off",
+        ttk.Radiobutton(row3, text="停用", variable=self.mode_var, value="off",
                         command=self.on_mode_change).pack(side="left", padx=5)
-        ttk.Radiobutton(row2, text="熱鍵 (F6)", variable=self.mode_var, value="hotkey",
+        ttk.Radiobutton(row3, text="熱鍵 (F6)", variable=self.mode_var, value="hotkey",
                         command=self.on_mode_change).pack(side="left", padx=5)
-        ttk.Radiobutton(row2, text="🔥 自動點擊", variable=self.mode_var, value="auto",
+        ttk.Radiobutton(row3, text="🔥 自動點擊", variable=self.mode_var, value="auto",
                         command=self.on_mode_change).pack(side="left", padx=5)
 
-        ttk.Separator(row2, orient="vertical").pack(side="left", fill="y", padx=10)
+        ttk.Separator(row3, orient="vertical").pack(side="left", fill="y", padx=10)
 
-        ttk.Label(row2, text="掃描間隔:").pack(side="left", padx=5)
+        ttk.Label(row3, text="掃描間隔:").pack(side="left", padx=5)
         self.interval_var = tk.StringVar(value="0.5")
-        interval_combo = ttk.Combobox(row2, textvariable=self.interval_var, width=8, state="readonly",
-                                       values=["0.3", "0.5", "1.0", "2.0"])
-        interval_combo.pack(side="left", padx=5)
-        interval_combo.bind("<<ComboboxSelected>>", self.on_interval_change)
-        ttk.Label(row2, text="秒").pack(side="left")
+        scan_interval_combo = ttk.Combobox(row3, textvariable=self.interval_var, width=8, state="readonly",
+                                            values=["0.3", "0.5", "1.0", "2.0"])
+        scan_interval_combo.pack(side="left", padx=5)
+        scan_interval_combo.bind("<<ComboboxSelected>>", self.on_interval_change)
+        ttk.Label(row3, text="秒").pack(side="left")
 
-        ttk.Separator(row2, orient="vertical").pack(side="left", fill="y", padx=10)
+        ttk.Separator(row3, orient="vertical").pack(side="left", fill="y", padx=10)
 
         # 點擊速度選項
         self.instant_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(row2, text="瞬間點擊", variable=self.instant_var,
+        ttk.Checkbutton(row3, text="瞬間點擊", variable=self.instant_var,
                         command=self.on_instant_change).pack(side="left", padx=5)
-
-        ttk.Button(row2, text="縮小到托盤", command=self.hide_to_tray).pack(side="right", padx=10)
 
         # === 預覽區 ===
         preview_frame = ttk.LabelFrame(self.root, text="預覽 (拖曳框選目標)")
@@ -219,8 +315,8 @@ class TrayClicker:
                         command=self.on_continuous_change).pack(side="left", padx=5)
 
         # 右側：設定按鈕 + 計數
-        self.count_var = tk.StringVar(value="0")
-        count_btn = tk.Button(bottom_frame, textvariable=self.count_var, width=6,
+        self.total_clicks_var = tk.StringVar(value="0")
+        count_btn = tk.Button(bottom_frame, textvariable=self.total_clicks_var, width=6,
                                bg="#222", fg="#4CAF50", font=("Consolas", 12, "bold"),
                                relief="flat", cursor="hand2", command=self.show_settings)
         count_btn.pack(side="right", padx=5)
@@ -272,7 +368,7 @@ class TrayClicker:
             Item('⌨ 熱鍵模式', self.set_hotkey_mode,
                  checked=lambda item: self.mode == "hotkey",
                  enabled=lambda item: self.template is not None),
-            Item('⏸ 關閉', self.set_off_mode,
+            Item('⏸ 停用', self.set_off_mode,
                  checked=lambda item: self.mode == "off"),
             Item('─────────', None, enabled=False),
             Item('❌ 結束程式', self.quit_app)
@@ -336,7 +432,7 @@ class TrayClicker:
         elif self.mode == "hotkey":
             self.status_var.set("熱鍵模式：按 F6 找圖點擊")
         else:
-            self.status_var.set("已關閉")
+            self.status_var.set("已停用")
 
     def on_interval_change(self, event=None):
         """間隔改變"""
@@ -359,14 +455,125 @@ class TrayClicker:
         else:
             self.status_var.set("連續點擊: 關閉")
 
-    def increment_click_count(self):
+    def on_action_change(self, event=None):
+        """動作設定改變，更新當前腳本"""
+        self.current_script.click_count = int(self.click_count_var.get())
+        self.current_script.click_interval = float(self.click_interval_var.get())
+        self.current_script.after_key = self.after_key_var.get()
+
+        action_desc = f"點{self.current_script.click_count}下"
+        if self.current_script.after_key:
+            action_desc += f" → {self.current_script.after_key}"
+        self.status_var.set(f"動作: {action_desc}")
+
+    # ============================================================
+    # 腳本管理
+    # ============================================================
+
+    def _refresh_script_list(self):
+        """刷新腳本下拉列表"""
+        scripts = ["(新腳本)"]
+        if os.path.exists(self.scripts_dir):
+            for f in os.listdir(self.scripts_dir):
+                if f.endswith(".json"):
+                    scripts.append(f[:-5])
+        self.script_combo["values"] = scripts
+
+    def on_script_select(self, event=None):
+        """選擇腳本"""
+        name = self.script_var.get()
+        if name == "(新腳本)":
+            self.current_script = SimpleScript()
+            self.template = None
+            self._update_ui_from_script()
+            self.status_var.set("新腳本")
+            return
+
+        filepath = os.path.join(self.scripts_dir, f"{name}.json")
+        if os.path.exists(filepath):
+            self.current_script = SimpleScript.load(filepath)
+            self._load_template_from_script()
+            self._update_ui_from_script()
+            self.status_var.set(f"已載入: {name}")
+
+    def _update_ui_from_script(self):
+        """從腳本更新 UI"""
+        self.click_count_var.set(str(self.current_script.click_count))
+        self.click_interval_var.set(str(self.current_script.click_interval))
+        self.after_key_var.set(self.current_script.after_key)
+
+        # 更新模板資訊
+        if self.template is not None:
+            h, w = self.template.shape[:2]
+            name = os.path.basename(self.current_script.template_path)
+            self.template_info.config(text=f"{name} ({w}x{h})", foreground="green")
+        else:
+            self.template_info.config(text="(未設定)", foreground="gray")
+
+        self.update_icon()
+
+    def _load_template_from_script(self):
+        """從腳本載入模板圖片"""
+        if self.current_script.template_path and os.path.exists(self.current_script.template_path):
+            self.template = cv2.imread(self.current_script.template_path)
+        else:
+            self.template = None
+
+    def save_script(self):
+        """儲存當前腳本"""
+        if not self.current_script.name or self.current_script.name == "未命名":
+            self.save_script_as()
+            return
+
+        filepath = os.path.join(self.scripts_dir, f"{self.current_script.name}.json")
+        self.current_script.save(filepath)
+        self._refresh_script_list()
+        self.script_var.set(self.current_script.name)
+        self.status_var.set(f"已儲存: {self.current_script.name}")
+
+    def save_script_as(self):
+        """另存腳本"""
+        from tkinter import simpledialog
+        name = simpledialog.askstring("儲存腳本", "腳本名稱:", parent=self.root)
+        if not name:
+            return
+
+        self.current_script.name = name
+        filepath = os.path.join(self.scripts_dir, f"{name}.json")
+        self.current_script.save(filepath)
+        self._refresh_script_list()
+        self.script_var.set(name)
+        self.status_var.set(f"已儲存: {name}")
+
+    def delete_script(self):
+        """刪除腳本"""
+        from tkinter import messagebox
+        name = self.script_var.get()
+        if name == "(新腳本)":
+            return
+
+        if not messagebox.askyesno("確認刪除", f"確定要刪除「{name}」嗎？"):
+            return
+
+        filepath = os.path.join(self.scripts_dir, f"{name}.json")
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+        self._refresh_script_list()
+        self.script_var.set("(新腳本)")
+        self.current_script = SimpleScript()
+        self.template = None
+        self._update_ui_from_script()
+        self.status_var.set(f"已刪除: {name}")
+
+    def increment_click_count(self, count=1):
         """增加點擊計數並更新 UI"""
-        self.click_count += 1
+        self.total_clicks += count
         self.root.after(0, self._update_counter_ui)
 
     def _update_counter_ui(self):
         """更新計數器 UI"""
-        self.count_var.set(str(self.click_count))
+        self.total_clicks_var.set(str(self.total_clicks))
 
     def show_settings(self):
         """顯示設定面板"""
@@ -385,13 +592,13 @@ class TrayClicker:
 
         # 大數字顯示
         tk.Label(stats_frame, text="已幫你點擊", font=("", 14), fg="#666").pack(pady=(20, 5))
-        tk.Label(stats_frame, text=str(self.click_count), font=("Consolas", 72, "bold"), fg="#4CAF50").pack()
+        tk.Label(stats_frame, text=str(self.total_clicks), font=("Consolas", 72, "bold"), fg="#4CAF50").pack()
         tk.Label(stats_frame, text="次", font=("", 14), fg="#666").pack(pady=(5, 30))
 
         # 統計資訊
         info_frame = ttk.LabelFrame(stats_frame, text="統計", padding=10)
         info_frame.pack(fill="x", pady=10)
-        ttk.Label(info_frame, text=f"本次啟動點擊: {self.click_count} 次").pack(anchor="w")
+        ttk.Label(info_frame, text=f"本次啟動點擊: {self.total_clicks} 次").pack(anchor="w")
         ttk.Label(info_frame, text=f"當前模式: {self.mode}").pack(anchor="w")
         ttk.Label(info_frame, text=f"掃描間隔: {self.auto_interval} 秒").pack(anchor="w")
 
@@ -780,12 +987,106 @@ class TrayClicker:
         self.template = self.screenshot[y1:y2, x1:x2].copy()
         self.last_screen_hash = None
 
+        # 自動儲存模板圖片
+        template_dir = os.path.join(os.path.dirname(__file__), "templates")
+        os.makedirs(template_dir, exist_ok=True)
+
+        # 使用時間戳命名
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        template_filename = f"template_{timestamp}.png"
+        template_path = os.path.join(template_dir, template_filename)
+        cv2.imwrite(template_path, self.template)
+
+        # 更新當前腳本的模板路徑
+        self.current_script.template_path = template_path
+
         # 更新模板資訊
         h, w = self.template.shape[:2]
-        self.template_info.config(text=f"{w}x{h} px", foreground="green")
+        self.template_info.config(text=f"{template_filename} ({w}x{h})", foreground="green")
 
         self.update_icon()
-        self.status_var.set("模板已儲存！選擇模式開始使用")
+        self.status_var.set("模板已儲存！可調整動作設定後儲存腳本")
+
+    def _show_quick_action_menu(self):
+        """顯示截圖後快速動作選單"""
+        menu = tk.Toplevel(self.root)
+        menu.title("下一步？")
+        menu.geometry("320x200")
+        menu.transient(self.root)
+        menu.grab_set()
+
+        # 置中
+        menu.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - 320) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 200) // 2
+        menu.geometry(f"+{x}+{y}")
+
+        tk.Label(menu, text="模板已儲存！接下來要？", font=("Microsoft JhengHei", 12, "bold")).pack(pady=15)
+
+        btn_frame = tk.Frame(menu)
+        btn_frame.pack(pady=10)
+
+        def add_to_script(action):
+            menu.destroy()
+            self._add_block_to_editor(action)
+
+        tk.Button(
+            btn_frame, text="🖱️ 點擊它", width=12, height=2,
+            bg="#4C97FF", fg="white", font=("", 10),
+            command=lambda: add_to_script("click")
+        ).grid(row=0, column=0, padx=5, pady=5)
+
+        tk.Button(
+            btn_frame, text="👁️ 等它出現", width=12, height=2,
+            bg="#FFBF00", fg="black", font=("", 10),
+            command=lambda: add_to_script("wait_image")
+        ).grid(row=0, column=1, padx=5, pady=5)
+
+        tk.Button(
+            btn_frame, text="📜 編輯腳本", width=12, height=2,
+            bg="#9966FF", fg="white", font=("", 10),
+            command=lambda: [menu.destroy(), self.open_block_editor()]
+        ).grid(row=1, column=0, padx=5, pady=5)
+
+        tk.Button(
+            btn_frame, text="❌ 只儲存", width=12, height=2,
+            bg="#666", fg="white", font=("", 10),
+            command=menu.destroy
+        ).grid(row=1, column=1, padx=5, pady=5)
+
+    def _add_block_to_editor(self, action_type):
+        """添加積木到編輯器"""
+        # 先儲存模板到檔案
+        from tkinter import simpledialog
+        name = simpledialog.askstring("儲存模板", "模板名稱:", parent=self.root)
+        if not name:
+            return
+
+        template_dir = os.path.join(os.path.dirname(__file__), "templates")
+        os.makedirs(template_dir, exist_ok=True)
+        filepath = os.path.join(template_dir, f"{name}.png")
+        cv2.imwrite(filepath, self.template)
+
+        # 開啟編輯器並添加積木
+        self.open_block_editor()
+        if hasattr(self, 'block_editor') and self.block_editor:
+            from block_editor import Block
+            block = Block(action_type, {"image": filepath})
+            self.block_editor.script.blocks.append(block)
+            self.block_editor.refresh_script_view()
+            self.block_editor.status_var.set(f"已添加: {block.get_label()}")
+
+    def open_block_editor(self):
+        """開啟積木編輯器"""
+        try:
+            from block_editor import BlockEditor
+            templates_dir = os.path.join(os.path.dirname(__file__), "templates")
+            scripts_dir = os.path.join(os.path.dirname(__file__), "scripts")
+            self.block_editor = BlockEditor(self.root, templates_dir, scripts_dir)
+        except ImportError as e:
+            from tkinter import messagebox
+            messagebox.showerror("錯誤", f"無法載入積木編輯器: {e}")
 
     def test_find(self):
         """測試找圖"""
@@ -830,6 +1131,38 @@ class TrayClicker:
         t = threading.Thread(target=self._auto_loop, daemon=True)
         t.start()
 
+    def _execute_action_sequence(self, cx, cy):
+        """執行動作序列：多次點擊 + 按鍵"""
+        click_count = self.current_script.click_count
+        click_interval = self.current_script.click_interval
+        after_key = self.current_script.after_key
+
+        # 儲存原本游標位置
+        original_pos = pyautogui.position()
+
+        # 移動到目標位置（只移動一次）
+        user32.SetCursorPos(cx, cy)
+        time.sleep(0.02)  # 短暫等待確保移動完成
+
+        # 執行多次點擊（不移動游標）
+        for i in range(click_count):
+            user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+            user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+            if i < click_count - 1:
+                time.sleep(click_interval)
+
+        # 執行後續按鍵（在目標視窗按）
+        if after_key:
+            time.sleep(0.1)  # 等待點擊讓視窗獲得焦點
+            pyautogui.press(after_key.lower())
+
+        # 游標回原位
+        time.sleep(0.05)
+        user32.SetCursorPos(original_pos[0], original_pos[1])
+
+        # 更新計數
+        self.increment_click_count(click_count)
+
     def _auto_loop(self):
         """自動偵測（不搶焦點）"""
         while self.running and self.mode == "auto":
@@ -863,9 +1196,8 @@ class TrayClicker:
                         cx = max_loc[0] + tw // 2 + ox
                         cy = max_loc[1] + th // 2 + oy
 
-                        # 使用不搶焦點的點擊
-                        click_no_focus(cx, cy, self.instant_click)
-                        self.increment_click_count()
+                        # 執行動作序列
+                        self._execute_action_sequence(cx, cy)
 
                         self.last_click_time = time.time()
                         self.last_screen_hash = None
@@ -900,8 +1232,8 @@ class TrayClicker:
             cx = max_loc[0] + tw // 2 + ox
             cy = max_loc[1] + th // 2 + oy
 
-            click_no_focus(cx, cy, self.instant_click)
-            self.increment_click_count()
+            # 執行動作序列
+            self._execute_action_sequence(cx, cy)
 
         except Exception:
             pass
