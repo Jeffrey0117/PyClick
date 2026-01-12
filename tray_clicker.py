@@ -147,6 +147,9 @@ class TrayClicker:
         self.scripts_dir = os.path.join(os.path.dirname(__file__), "simple_scripts")
         os.makedirs(self.scripts_dir, exist_ok=True)
 
+        # 執行緒鎖
+        self._lock = threading.Lock()
+
         # GUI
         self.root = None
         self.panel_visible = True
@@ -1215,6 +1218,7 @@ class TrayClicker:
             monitor = sct.monitors[0]
             screen = np.array(sct.grab(monitor))
             screen = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
+            ox, oy = monitor["left"], monitor["top"]  # 多螢幕偏移
 
         self.root.deiconify()
 
@@ -1226,9 +1230,10 @@ class TrayClicker:
 
         if max_val >= 0.7:
             cv2.rectangle(preview, max_loc, (max_loc[0]+tw, max_loc[1]+th), (0, 255, 0), 3)
-            cx, cy = max_loc[0] + tw//2, max_loc[1] + th//2
-            cv2.circle(preview, (cx, cy), 10, (0, 0, 255), -1)
-            self.status_var.set(f"找到！位置 ({cx}, {cy}) 相似度 {max_val:.0%}")
+            # 螢幕座標 = 圖片座標 + 偏移
+            cx, cy = max_loc[0] + tw//2 + ox, max_loc[1] + th//2 + oy
+            cv2.circle(preview, (max_loc[0] + tw//2, max_loc[1] + th//2), 10, (0, 0, 255), -1)
+            self.status_var.set(f"找到！螢幕座標 ({cx}, {cy}) 相似度 {max_val:.0%}")
         else:
             self.status_var.set(f"找不到 (最高相似度 {max_val:.0%})")
 
@@ -1291,11 +1296,11 @@ class TrayClicker:
                 small = cv2.resize(screen_bgr, (160, 90))
                 screen_hash = hashlib.md5(small.tobytes()).hexdigest()
 
-                if screen_hash == self.last_screen_hash:
-                    time.sleep(self.auto_interval)
-                    continue
-
-                self.last_screen_hash = screen_hash
+                with self._lock:
+                    if screen_hash == self.last_screen_hash:
+                        time.sleep(self.auto_interval)
+                        continue
+                    self.last_screen_hash = screen_hash
 
                 # 模板匹配
                 result = cv2.matchTemplate(screen_bgr, self.template, cv2.TM_CCOEFF_NORMED)
@@ -1303,7 +1308,8 @@ class TrayClicker:
 
                 if max_val >= 0.7:
                     # 檢查冷卻（連續模式跳過冷卻檢查）
-                    cooldown_passed = self.continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
+                    with self._lock:
+                        cooldown_passed = self.continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
 
                     if cooldown_passed:
                         th, tw = self.template.shape[:2]
@@ -1313,12 +1319,15 @@ class TrayClicker:
                         # 執行動作序列
                         self._execute_action_sequence(cx, cy)
 
-                        self.last_click_time = time.time()
-                        self.last_screen_hash = None
+                        with self._lock:
+                            self.last_click_time = time.time()
+                            self.last_screen_hash = None
 
                 time.sleep(self.auto_interval)
 
-            except Exception:
+            except Exception as e:
+                # 記錄錯誤但不中斷
+                print(f"[PyClick] 自動模式錯誤: {e}")
                 time.sleep(self.auto_interval)
 
     def on_hotkey(self):
@@ -1349,8 +1358,8 @@ class TrayClicker:
             # 執行動作序列
             self._execute_action_sequence(cx, cy)
 
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[PyClick] 熱鍵點擊錯誤: {e}")
 
     def quit_app(self, icon=None, item=None):
         """結束"""
