@@ -336,6 +336,9 @@ class LiteRunner:
         ttk.Button(btn_frame, text="關閉", command=self.root.destroy,
                    width=10).pack(side="left", padx=10)
 
+        # 啟動統計更新（面板開啟時持續更新）
+        self._start_stats_update()
+
         self.root.mainloop()
 
     def _apply_settings(self):
@@ -367,7 +370,6 @@ class LiteRunner:
         self.start_auto_thread()
         self.update_icon()
         self._update_control_buttons()
-        self._start_stats_update()
 
     def _stop_from_ui(self):
         """從 UI 停止自動模式"""
@@ -381,8 +383,8 @@ class LiteRunner:
             if self.root and self.root.winfo_exists():
                 if hasattr(self, 'stats_label'):
                     self.stats_label.config(text=f"已點擊: {self.total_clicks} 次")
-                if self.mode == "auto":
-                    self.root.after(1000, update)
+                # 面板開啟時持續更新
+                self.root.after(500, update)
         update()
 
     def start_auto_thread(self):
