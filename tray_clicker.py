@@ -214,26 +214,29 @@ class TrayClicker:
 
         ttk.Label(row2, text="點擊").pack(side="left", padx=(5, 2))
         self.click_count_var = tk.StringVar(value="1")
-        click_count_combo = ttk.Combobox(row2, textvariable=self.click_count_var, width=3, state="readonly",
-                                          values=["1", "2", "3", "4", "5"])
+        click_count_combo = ttk.Combobox(row2, textvariable=self.click_count_var, width=4,
+                                          values=["1", "2", "3", "4", "5", "10"])
         click_count_combo.pack(side="left", padx=2)
         click_count_combo.bind("<<ComboboxSelected>>", self.on_action_change)
+        click_count_combo.bind("<FocusOut>", self.on_action_change)
         ttk.Label(row2, text="次").pack(side="left", padx=(2, 10))
 
         ttk.Label(row2, text="間隔:").pack(side="left", padx=5)
         self.click_interval_var = tk.StringVar(value="0.1")
-        interval_combo = ttk.Combobox(row2, textvariable=self.click_interval_var, width=5, state="readonly",
-                                       values=["0.05", "0.1", "0.2", "0.3", "0.5"])
+        interval_combo = ttk.Combobox(row2, textvariable=self.click_interval_var, width=6,
+                                       values=["0.05", "0.1", "0.15", "0.2", "0.3", "0.5", "1.0"])
         interval_combo.pack(side="left", padx=2)
         interval_combo.bind("<<ComboboxSelected>>", self.on_action_change)
+        interval_combo.bind("<FocusOut>", self.on_action_change)
         ttk.Label(row2, text="秒").pack(side="left", padx=(2, 10))
 
         ttk.Label(row2, text="然後按:").pack(side="left", padx=5)
         self.after_key_var = tk.StringVar(value="")
-        after_key_combo = ttk.Combobox(row2, textvariable=self.after_key_var, width=8, state="readonly",
-                                        values=["", "Enter", "Tab", "Space", "Escape"])
+        after_key_combo = ttk.Combobox(row2, textvariable=self.after_key_var, width=8,
+                                        values=["", "Enter", "Tab", "Space", "Escape", "Up", "Down", "Left", "Right"])
         after_key_combo.pack(side="left", padx=2)
         after_key_combo.bind("<<ComboboxSelected>>", self.on_action_change)
+        after_key_combo.bind("<FocusOut>", self.on_action_change)
 
         ttk.Button(row2, text="縮小到托盤", command=self.hide_to_tray).pack(side="right", padx=10)
 
@@ -457,14 +460,27 @@ class TrayClicker:
 
     def on_action_change(self, event=None):
         """動作設定改變，更新當前腳本"""
-        self.current_script.click_count = int(self.click_count_var.get())
-        self.current_script.click_interval = float(self.click_interval_var.get())
+        try:
+            self.current_script.click_count = int(self.click_count_var.get())
+        except ValueError:
+            self.current_script.click_count = 1
+
+        try:
+            self.current_script.click_interval = float(self.click_interval_var.get())
+        except ValueError:
+            self.current_script.click_interval = 0.1
+
         self.current_script.after_key = self.after_key_var.get()
 
         action_desc = f"點{self.current_script.click_count}下"
         if self.current_script.after_key:
             action_desc += f" → {self.current_script.after_key}"
-        self.status_var.set(f"動作: {action_desc}")
+
+        # 提示用戶儲存
+        if self.current_script.name and self.current_script.name != "未命名":
+            self.status_var.set(f"動作: {action_desc}  ⚠ 記得按「儲存」")
+        else:
+            self.status_var.set(f"動作: {action_desc}  ⚠ 記得按「另存」")
 
     # ============================================================
     # 腳本管理
@@ -495,6 +511,28 @@ class TrayClicker:
             self._load_template_from_script()
             self._update_ui_from_script()
             self.status_var.set(f"已載入: {name}")
+            self._show_toast(f"已載入腳本: {name}")
+
+    def _show_toast(self, message, duration=1500):
+        """顯示自動消失的通知"""
+        toast = tk.Toplevel(self.root)
+        toast.overrideredirect(True)  # 無邊框
+        toast.attributes("-topmost", True)
+
+        # 置中於主視窗上方
+        toast.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - 250) // 2
+        y = self.root.winfo_y() + 50
+        toast.geometry(f"250x40+{x}+{y}")
+
+        # 樣式
+        frame = tk.Frame(toast, bg="#333", padx=15, pady=8)
+        frame.pack(fill="both", expand=True)
+        tk.Label(frame, text=message, bg="#333", fg="#4CAF50",
+                 font=("Microsoft JhengHei", 10, "bold")).pack()
+
+        # 自動消失
+        toast.after(duration, toast.destroy)
 
     def _update_ui_from_script(self):
         """從腳本更新 UI"""
@@ -1137,12 +1175,13 @@ class TrayClicker:
         click_interval = self.current_script.click_interval
         after_key = self.current_script.after_key
 
-        # 儲存原本游標位置
+        # 儲存原本游標位置和前景視窗
         original_pos = pyautogui.position()
+        original_hwnd = user32.GetForegroundWindow()
 
         # 移動到目標位置（只移動一次）
         user32.SetCursorPos(cx, cy)
-        time.sleep(0.02)  # 短暫等待確保移動完成
+        time.sleep(0.02)
 
         # 執行多次點擊（不移動游標）
         for i in range(click_count):
@@ -1153,12 +1192,15 @@ class TrayClicker:
 
         # 執行後續按鍵（在目標視窗按）
         if after_key:
-            time.sleep(0.1)  # 等待點擊讓視窗獲得焦點
+            time.sleep(0.1)
             pyautogui.press(after_key.lower())
+            time.sleep(0.05)
 
         # 游標回原位
-        time.sleep(0.05)
         user32.SetCursorPos(original_pos[0], original_pos[1])
+
+        # 恢復原本視窗焦點
+        force_focus(original_hwnd)
 
         # 更新計數
         self.increment_click_count(click_count)
