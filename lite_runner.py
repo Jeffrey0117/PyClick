@@ -295,25 +295,25 @@ class LiteRunner:
         )
         self.status_label.pack(side="right")
 
-        # 開始/停止按鈕
+        # 開始/停止按鈕（美化版）
         control_btn_frame = ttk.Frame(control_frame)
         control_btn_frame.pack(fill="x", pady=10)
 
         self.start_btn = tk.Button(
             control_btn_frame, text="▶ 開始",
-            command=self._start_from_ui, width=10,
-            bg="#4CAF50", fg="white", activebackground="#388E3C",
-            font=("Microsoft JhengHei", 9, "bold"), relief="flat"
+            command=self._start_from_ui, width=12,
+            bg="#2E7D32", fg="white", activebackground="#1B5E20", activeforeground="white",
+            font=("Microsoft JhengHei", 10, "bold"), relief="flat", bd=0, cursor="hand2"
         )
-        self.start_btn.pack(side="left", padx=5, expand=True)
+        self.start_btn.pack(side="left", padx=10, expand=True, ipady=5)
 
         self.stop_btn = tk.Button(
             control_btn_frame, text="■ 停止",
-            command=self._stop_from_ui, width=10,
-            bg="#F44336", fg="white", activebackground="#D32F2F",
-            font=("Microsoft JhengHei", 9, "bold"), relief="flat"
+            command=self._stop_from_ui, width=12,
+            bg="#C62828", fg="white", activebackground="#B71C1C", activeforeground="white",
+            font=("Microsoft JhengHei", 10, "bold"), relief="flat", bd=0, cursor="hand2"
         )
-        self.stop_btn.pack(side="left", padx=5, expand=True)
+        self.stop_btn.pack(side="left", padx=10, expand=True, ipady=5)
 
         self._update_control_buttons()
 
@@ -354,13 +354,13 @@ class LiteRunner:
     def _update_control_buttons(self):
         """更新控制按鈕狀態"""
         if self.mode == "auto":
-            self.start_btn.config(state="disabled", bg="#A5D6A7")
-            self.stop_btn.config(state="normal", bg="#F44336")
-            self.status_label.config(text="執行中", fg="#388E3C")
+            self.start_btn.config(state="disabled", bg="#81C784")
+            self.stop_btn.config(state="normal", bg="#C62828")
+            self.status_label.config(text="執行中", fg="#2E7D32")
         else:
-            self.start_btn.config(state="normal", bg="#4CAF50")
-            self.stop_btn.config(state="disabled", bg="#EF9A9A")
-            self.status_label.config(text="已停止", fg="#D32F2F")
+            self.start_btn.config(state="normal", bg="#2E7D32")
+            self.stop_btn.config(state="disabled", bg="#FFCDD2")
+            self.status_label.config(text="已停止", fg="#C62828")
 
     def _start_from_ui(self):
         """從 UI 啟動自動模式"""

@@ -1779,21 +1779,13 @@ class TrayClicker:
 
 
 if __name__ == "__main__":
-    if not check_single_instance():
-        # 已有實例運行，顯示提示後退出
-        root = tk.Tk()
-        root.withdraw()
-        from tkinter import messagebox
-        messagebox.showwarning("PyClick", "PyClick 已在運行中！\n請查看系統托盤。")
-        root.destroy()
-    else:
-        logger.info("=" * 50)
-        logger.info("PyClick 啟動")
-        logger.info(f"日誌檔案: {log_file}")
-        try:
-            app = TrayClicker()
-            app.run()
-        except Exception as e:
-            logger.critical(f"程式異常終止: {e}", exc_info=True)
-        finally:
-            logger.info("PyClick 結束")
+    logger.info("=" * 50)
+    logger.info("PyClick 啟動")
+    logger.info(f"日誌檔案: {log_file}")
+    try:
+        app = TrayClicker()
+        app.run()
+    except Exception as e:
+        logger.critical(f"程式異常終止: {e}", exc_info=True)
+    finally:
+        logger.info("PyClick 結束")
