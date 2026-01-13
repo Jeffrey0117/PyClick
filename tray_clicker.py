@@ -53,19 +53,33 @@ logger = logging.getLogger('PyClick')
 # ============================================================
 
 class SimpleScript:
-    """簡單腳本：一個圖 + 一組動作"""
+    """簡單腳本：多個圖 + 一組動作（任一圖匹配即觸發）"""
 
     def __init__(self, name="未命名"):
         self.name = name
-        self.template_path = ""      # 模板圖片路徑
+        self.template_paths = []     # 模板圖片路徑列表（多模板支援）
         self.click_count = 1         # 點擊次數
         self.click_interval = 0.1    # 點擊間隔（秒）
         self.after_key = ""          # 點完後按的鍵（空=不按）
 
+    @property
+    def template_path(self):
+        """向後相容：取得第一個模板路徑"""
+        return self.template_paths[0] if self.template_paths else ""
+
+    @template_path.setter
+    def template_path(self, value):
+        """向後相容：設定單一模板"""
+        if value:
+            if not self.template_paths:
+                self.template_paths = [value]
+            else:
+                self.template_paths[0] = value
+
     def to_dict(self):
         return {
             "name": self.name,
-            "template_path": self.template_path,
+            "template_paths": self.template_paths,
             "click_count": self.click_count,
             "click_interval": self.click_interval,
             "after_key": self.after_key,
@@ -74,7 +88,11 @@ class SimpleScript:
     @classmethod
     def from_dict(cls, data):
         script = cls(data.get("name", "未命名"))
-        script.template_path = data.get("template_path", "")
+        # 向後相容：支援舊格式 template_path (單一) 和新格式 template_paths (多個)
+        if "template_paths" in data:
+            script.template_paths = data["template_paths"]
+        elif "template_path" in data and data["template_path"]:
+            script.template_paths = [data["template_path"]]
         script.click_count = data.get("click_count", 1)
         script.click_interval = data.get("click_interval", 0.1)
         script.after_key = data.get("after_key", "")
@@ -94,7 +112,7 @@ pyautogui.FAILSAFE = True
 
 class TrayClicker:
     def __init__(self):
-        self.template = None
+        self.templates = []  # 多模板支援（任一匹配即觸發）
         self.hotkey = 'F6'
         self.running = True
 
@@ -143,6 +161,22 @@ class TrayClicker:
         self.setup_gui()
         self.setup_tray()
         self.setup_hotkey()
+
+    # 向後相容的 template 屬性
+    @property
+    def template(self):
+        """向後相容：取得第一個模板"""
+        return self.templates[0] if self.templates else None
+
+    @template.setter
+    def template(self, value):
+        """向後相容：設定單一模板"""
+        if value is None:
+            self.templates = []
+        elif not self.templates:
+            self.templates = [value]
+        else:
+            self.templates[0] = value
 
     def _load_stats(self):
         """載入統計資料和設定"""
@@ -340,6 +374,10 @@ class TrayClicker:
         ttk.Label(bottom_frame, text="模板:").pack(side="left")
         self.template_info = ttk.Label(bottom_frame, text="(未設定)", foreground="gray")
         self.template_info.pack(side="left", padx=5)
+
+        # 清除模板按鈕
+        ttk.Button(bottom_frame, text="清除", width=4,
+                   command=self._clear_templates).pack(side="left", padx=2)
 
         # 連續點擊選項
         ttk.Separator(bottom_frame, orient="vertical").pack(side="left", fill="y", padx=10)
@@ -634,25 +672,30 @@ class TrayClicker:
         self.click_interval_var.set(str(self.current_script.click_interval))
         self.after_key_var.set(self.current_script.after_key)
 
-        # 更新模板資訊
-        if self.template is not None:
-            h, w = self.template.shape[:2]
-            name = os.path.basename(self.current_script.template_path)
+        # 更新模板資訊（多模板支援）
+        count = len(self.templates)
+        if count == 0:
+            self.template_info.config(text="(未設定)", foreground="gray")
+        elif count == 1:
+            h, w = self.templates[0].shape[:2]
+            name = os.path.basename(self.current_script.template_paths[0]) if self.current_script.template_paths else "模板"
             self.template_info.config(text=f"{name} ({w}x{h})", foreground="green")
         else:
-            self.template_info.config(text="(未設定)", foreground="gray")
+            self.template_info.config(text=f"{count} 個模板", foreground="green")
 
         self.update_icon()
 
     def _load_template_from_script(self):
-        """從腳本載入模板圖片"""
-        if self.current_script.template_path and os.path.exists(self.current_script.template_path):
-            new_template = cv2.imread(self.current_script.template_path)
-        else:
-            new_template = None
+        """從腳本載入模板圖片（多模板支援）"""
+        new_templates = []
+        for path in self.current_script.template_paths:
+            if path and os.path.exists(path):
+                img = cv2.imread(path)
+                if img is not None:
+                    new_templates.append(img)
 
         with self._lock:
-            self.template = new_template
+            self.templates = new_templates
 
     def save_script(self):
         """儲存當前腳本"""
@@ -891,7 +934,7 @@ class TrayClicker:
         self.status_var.set(f"模板已儲存: {name}")
 
     def _load_selected_template(self):
-        """載入選中的模板"""
+        """載入選中的模板（新增到列表）"""
         import os
         selection = self.template_listbox.curselection()
         if not selection:
@@ -904,11 +947,23 @@ class TrayClicker:
         new_template = cv2.imread(filepath)
         if new_template is not None:
             with self._lock:
-                self.template = new_template
+                self.templates.append(new_template)
+
+            # 更新腳本路徑列表
+            self.current_script.template_paths.append(filepath)
+
             self.update_icon()
+            count = len(self.templates)
             h, w = new_template.shape[:2]
-            self.template_info.config(text=f"{name} ({w}x{h})", foreground="green")
-            self.status_var.set(f"已載入模板: {name}")
+            if count == 1:
+                self.template_info.config(text=f"{name} ({w}x{h})", foreground="green")
+            else:
+                self.template_info.config(text=f"{count} 個模板", foreground="green")
+            self.status_var.set(f"已新增模板: {name} (共 {count} 個)")
+
+            # 警告過多模板
+            if count > 5:
+                self._show_toast(f"警告: {count} 個模板可能影響效能", duration=2000)
 
     def _delete_selected_template(self):
         """刪除選中的模板"""
@@ -925,6 +980,18 @@ class TrayClicker:
             os.remove(filepath)
             self._load_template_list()
             self.status_var.set(f"已刪除: {name}")
+
+    def _clear_templates(self):
+        """清除所有模板"""
+        with self._lock:
+            self.templates = []
+            self._last_match_pos = None
+            self._roi_miss_count = 0
+
+        self.current_script.template_paths = []
+        self.template_info.config(text="(未設定)", foreground="gray")
+        self.update_icon()
+        self.status_var.set("已清除所有模板")
 
     def _set_default_template(self):
         """設定選中的模板為預設"""
@@ -1218,17 +1285,13 @@ class TrayClicker:
         self.drag_start = None
 
     def save_template(self):
-        """儲存模板"""
+        """儲存模板（多模板支援：新增到列表）"""
         if self.selection is None:
             self.status_var.set("請先拖曳框選目標！")
             return
 
         x1, y1, x2, y2 = self.selection
         new_template = self.screenshot[y1:y2, x1:x2].copy()
-
-        with self._lock:
-            self.template = new_template
-            self.last_screen_hash = None
 
         # 自動儲存模板圖片
         template_dir = os.path.join(os.path.dirname(__file__), "templates")
@@ -1239,17 +1302,30 @@ class TrayClicker:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         template_filename = f"template_{timestamp}.png"
         template_path = os.path.join(template_dir, template_filename)
-        cv2.imwrite(template_path, self.template)
+        cv2.imwrite(template_path, new_template)
 
-        # 更新當前腳本的模板路徑
-        self.current_script.template_path = template_path
+        # 新增到模板列表（多模板支援）
+        with self._lock:
+            self.templates.append(new_template)
+            self.last_screen_hash = None
 
-        # 更新模板資訊
-        h, w = self.template.shape[:2]
-        self.template_info.config(text=f"{template_filename} ({w}x{h})", foreground="green")
+        # 更新當前腳本的模板路徑列表
+        self.current_script.template_paths.append(template_path)
+
+        # 更新模板資訊（顯示數量）
+        h, w = new_template.shape[:2]
+        count = len(self.templates)
+        if count == 1:
+            self.template_info.config(text=f"{template_filename} ({w}x{h})", foreground="green")
+        else:
+            self.template_info.config(text=f"{count} 個模板", foreground="green")
+
+        # 警告過多模板
+        if count > 5:
+            self._show_toast(f"警告: {count} 個模板可能影響效能", duration=2000)
 
         self.update_icon()
-        self.status_var.set("模板已儲存！可調整動作設定後儲存腳本")
+        self.status_var.set(f"模板已新增！共 {count} 個模板")
 
     def _show_quick_action_menu(self):
         """顯示截圖後快速動作選單"""
@@ -1439,12 +1515,13 @@ class TrayClicker:
         self.increment_click_count(click_count)
 
     def _auto_loop(self):
-        """自動偵測（不搶焦點）- 含 ROI 優化"""
+        """自動偵測（不搶焦點）- 多模板支援 + 短路優化"""
         while self.running:
             # 執行緒安全：讀取共享狀態
             with self._lock:
                 current_mode = self.mode
-                template = self.template.copy() if self.template is not None else None
+                # 複製所有模板（多模板支援）
+                templates = [t.copy() for t in self.templates] if self.templates else []
                 auto_interval = self.auto_interval
                 continuous_click = self.continuous_click
                 last_match_pos = self._last_match_pos
@@ -1453,7 +1530,7 @@ class TrayClicker:
             if current_mode != "auto":
                 break
 
-            if template is None:
+            if not templates:
                 time.sleep(auto_interval)
                 continue
 
@@ -1475,42 +1552,39 @@ class TrayClicker:
                         continue
                     self.last_screen_hash = screen_hash
 
-                th, tw = template.shape[:2]
-                max_val = 0
-                max_loc = None
-                roi_offset = (0, 0)
-
-                # ROI 優化：先在上次位置附近搜尋
-                if last_match_pos and self._roi_miss_count < self._roi_max_miss:
-                    lx, ly = last_match_pos
-                    # 計算 ROI 範圍（螢幕座標轉圖片座標）
-                    roi_x1 = max(0, lx - ox - self._roi_margin)
-                    roi_y1 = max(0, ly - oy - self._roi_margin)
-                    roi_x2 = min(screen_w, lx - ox + tw + self._roi_margin)
-                    roi_y2 = min(screen_h, ly - oy + th + self._roi_margin)
-
-                    if roi_x2 - roi_x1 >= tw and roi_y2 - roi_y1 >= th:
-                        roi = screen_bgr[roi_y1:roi_y2, roi_x1:roi_x2]
-                        result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
-                        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-                        roi_offset = (roi_x1, roi_y1)
-
-                # ROI 沒找到，回退到全螢幕搜尋
-                if max_val < threshold:
-                    result = cv2.matchTemplate(screen_bgr, template, cv2.TM_CCOEFF_NORMED)
-                    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                # 多模板遍歷（短路優化：找到就停）
+                found = False
+                for template in templates:
+                    th, tw = template.shape[:2]
+                    max_val = 0
+                    max_loc = None
                     roi_offset = (0, 0)
-                    if last_match_pos:
-                        self._roi_miss_count += 1
 
-                if max_val >= threshold:
-                    self._roi_miss_count = 0
+                    # ROI 優化：先在上次位置附近搜尋
+                    if last_match_pos and self._roi_miss_count < self._roi_max_miss:
+                        lx, ly = last_match_pos
+                        roi_x1 = max(0, lx - ox - self._roi_margin)
+                        roi_y1 = max(0, ly - oy - self._roi_margin)
+                        roi_x2 = min(screen_w, lx - ox + tw + self._roi_margin)
+                        roi_y2 = min(screen_h, ly - oy + th + self._roi_margin)
 
-                    # 檢查冷卻（連續模式跳過冷卻檢查）
-                    with self._lock:
-                        cooldown_passed = continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
+                        if roi_x2 - roi_x1 >= tw and roi_y2 - roi_y1 >= th:
+                            roi = screen_bgr[roi_y1:roi_y2, roi_x1:roi_x2]
+                            result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+                            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                            roi_offset = (roi_x1, roi_y1)
 
-                    if cooldown_passed:
+                    # ROI 沒找到，全螢幕搜尋
+                    if max_val < threshold:
+                        result = cv2.matchTemplate(screen_bgr, template, cv2.TM_CCOEFF_NORMED)
+                        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                        roi_offset = (0, 0)
+
+                    if max_val >= threshold:
+                        self._roi_miss_count = 0
+                        found = True
+
+                        # 計算點擊座標
                         cx = max_loc[0] + roi_offset[0] + tw // 2 + ox
                         cy = max_loc[1] + roi_offset[1] + th // 2 + oy
 
@@ -1518,12 +1592,24 @@ class TrayClicker:
                         with self._lock:
                             self._last_match_pos = (cx, cy)
 
-                        # 執行動作序列
-                        self._execute_action_sequence(cx, cy)
-
+                        # 檢查冷卻
                         with self._lock:
-                            self.last_click_time = time.time()
-                            self.last_screen_hash = None
+                            cooldown_passed = continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
+
+                        if cooldown_passed:
+                            # 執行動作序列
+                            self._execute_action_sequence(cx, cy)
+
+                            with self._lock:
+                                self.last_click_time = time.time()
+                                self.last_screen_hash = None
+
+                        # 短路優化：找到就停，不再檢查其他模板
+                        break
+
+                # 沒找到任何模板，更新 ROI miss count
+                if not found:
+                    self._roi_miss_count += 1
 
                 # 釋放大型陣列
                 del screen_bgr, screen
@@ -1539,20 +1625,20 @@ class TrayClicker:
         """熱鍵觸發"""
         with self._lock:
             current_mode = self.mode
-            has_template = self.template is not None
+            has_templates = len(self.templates) > 0
 
-        if current_mode != "hotkey" or not has_template:
+        if current_mode != "hotkey" or not has_templates:
             return
         threading.Thread(target=self.find_and_click, daemon=True).start()
 
     def find_and_click(self):
-        """手動找圖點擊"""
-        # 執行緒安全：複製 template 和設定
+        """手動找圖點擊 - 多模板支援"""
+        # 執行緒安全：複製所有 template 和設定
         with self._lock:
-            template = self.template.copy() if self.template is not None else None
+            templates = [t.copy() for t in self.templates] if self.templates else []
             threshold = self.similarity_threshold
 
-        if template is None:
+        if not templates:
             return
 
         try:
@@ -1562,18 +1648,19 @@ class TrayClicker:
                 screen = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
                 ox, oy = monitor["left"], monitor["top"]
 
-            result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(result)
+            # 多模板遍歷（短路優化）
+            for template in templates:
+                result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
-            if max_val < threshold:
-                return
+                if max_val >= threshold:
+                    th, tw = template.shape[:2]
+                    cx = max_loc[0] + tw // 2 + ox
+                    cy = max_loc[1] + th // 2 + oy
 
-            th, tw = template.shape[:2]
-            cx = max_loc[0] + tw // 2 + ox
-            cy = max_loc[1] + th // 2 + oy
-
-            # 執行動作序列
-            self._execute_action_sequence(cx, cy)
+                    # 執行動作序列
+                    self._execute_action_sequence(cx, cy)
+                    break  # 短路：找到就停
 
         except Exception as e:
             logger.error(f"熱鍵點擊錯誤: {e}")
