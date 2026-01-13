@@ -135,6 +135,11 @@ class LiteRunner:
         self.hotkey = "F6"
         self.hotkey_enabled = True
 
+        # 定時停止
+        self.auto_stop_enabled = False
+        self.auto_stop_minutes = 30
+        self.auto_start_time = None
+
         # 狀態
         self.last_click_time = 0
         self.click_cooldown = 1.0
@@ -169,6 +174,8 @@ class LiteRunner:
             self.after_key = self.config.get("after_key", "")
             self.sound_enabled = self.config.get("sound_enabled", True)
             self.hotkey = self.config.get("hotkey", "F6")
+            self.auto_stop_enabled = self.config.get("auto_stop_enabled", False)
+            self.auto_stop_minutes = self.config.get("auto_stop_minutes", 30)
 
             # 載入模板圖片
             template_data = self.config.get("template_data")
@@ -191,6 +198,7 @@ class LiteRunner:
             self.mode = "off"
         else:
             self.mode = "auto"
+            self.auto_start_time = time.time()  # 記錄開始時間
             self.start_auto_thread()
 
         self.update_icon()
@@ -327,6 +335,14 @@ class LiteRunner:
                  font=("Microsoft JhengHei", 10, "bold")).pack(side="left", padx=5)
         ttk.Label(row5, text="(開始/停止)", foreground="gray").pack(side="left")
 
+        # 定時停止顯示
+        if self.auto_stop_enabled:
+            row6 = ttk.Frame(settings_frame)
+            row6.pack(fill="x", pady=5)
+            ttk.Label(row6, text="定時停止:").pack(side="left")
+            tk.Label(row6, text=f"{self.auto_stop_minutes} 分鐘", fg="#FF9800",
+                     font=("Microsoft JhengHei", 10, "bold")).pack(side="left", padx=5)
+
         # 控制區
         control_frame = ttk.LabelFrame(self.root, text="控制", padding=15)
         control_frame.pack(fill="x", padx=20, pady=10)
@@ -429,6 +445,7 @@ class LiteRunner:
         if self.template is None:
             return
         self.mode = "auto"
+        self.auto_start_time = time.time()  # 記錄開始時間
         self.start_auto_thread()
         self.update_icon()
         self._update_control_buttons()
@@ -489,6 +506,13 @@ class LiteRunner:
     def _auto_loop(self):
         """自動偵測迴圈"""
         while self.running and self.mode == "auto":
+            # 定時停止檢查
+            if self.auto_stop_enabled and self.auto_start_time:
+                elapsed = time.time() - self.auto_start_time
+                if elapsed >= self.auto_stop_minutes * 60:
+                    self._auto_stop_triggered()
+                    break
+
             try:
                 with mss.mss() as sct:
                     monitor = sct.monitors[0]
@@ -515,6 +539,21 @@ class LiteRunner:
             except Exception as e:
                 print(f"錯誤: {e}")
                 time.sleep(self.auto_interval)
+
+    def _auto_stop_triggered(self):
+        """定時停止觸發"""
+        self.mode = "off"
+        self.auto_start_time = None
+        self.update_icon()
+        # 更新 UI（如果面板開啟）
+        if self.root and self.root.winfo_exists():
+            self.root.after(0, self._on_auto_stop_complete)
+
+    def _on_auto_stop_complete(self):
+        """定時停止後更新 UI"""
+        self._update_control_buttons()
+        if hasattr(self, 'stats_label'):
+            self.stats_label.config(text=f"已運行 {self.auto_stop_minutes} 分鐘，自動停止")
 
     def quit_app(self, icon=None, item=None):
         """結束程式"""

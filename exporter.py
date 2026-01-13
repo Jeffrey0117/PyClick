@@ -149,6 +149,8 @@ class ExportDialog:
                 "after_key": self.script.after_key,
                 "sound_enabled": self.sound_var.get(),
                 "hotkey": "F6",  # 快捷鍵
+                "auto_stop_enabled": getattr(self.parent, 'auto_stop_enabled', False),
+                "auto_stop_minutes": getattr(self.parent, 'auto_stop_minutes', 30),
             }
 
             # 編碼模板圖片

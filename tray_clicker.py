@@ -164,6 +164,11 @@ class TrayClicker:
         self.similarity_threshold = 0.7  # 相似度閾值（可設定）
         self.block_input_enabled = False  # 執行時鎖定輸入（需管理員權限）
 
+        # 定時停止功能
+        self.auto_stop_enabled = False   # 是否啟用定時停止
+        self.auto_stop_minutes = 30      # 運行多少分鐘後停止
+        self.auto_start_time = None      # 自動模式開始時間
+
         # 設定檔路徑
         self.config_path = os.path.join(os.path.dirname(__file__), "config.json")
 
@@ -228,6 +233,8 @@ class TrayClicker:
                     self.similarity_threshold = config.get("similarity_threshold", 0.7)
                     self.click_cooldown = config.get("click_cooldown", 1.0)
                     self.block_input_enabled = config.get("block_input_enabled", False)
+                    self.auto_stop_enabled = config.get("auto_stop_enabled", False)
+                    self.auto_stop_minutes = config.get("auto_stop_minutes", 30)
             except Exception as e:
                 logger.warning(f"載入設定失敗: {e}")
 
@@ -244,6 +251,8 @@ class TrayClicker:
             config["similarity_threshold"] = self.similarity_threshold
             config["click_cooldown"] = self.click_cooldown
             config["block_input_enabled"] = self.block_input_enabled
+            config["auto_stop_enabled"] = self.auto_stop_enabled
+            config["auto_stop_minutes"] = self.auto_stop_minutes
             config["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
             with open(self.config_path, "w", encoding="utf-8") as f:
@@ -555,6 +564,7 @@ class TrayClicker:
                 return
             with self._lock:
                 self.mode = "auto"
+                self.auto_start_time = time.time()  # 記錄開始時間
             self.mode_var.set("auto")
             self._update_start_button()
             self.update_icon()
@@ -981,6 +991,17 @@ class TrayClicker:
         admin_color = "#4CAF50" if is_admin() else "#FF9800"
         ttk.Label(block_frame, text=admin_text, foreground=admin_color, font=("", 8)).pack(side="left", padx=10)
 
+        # 定時停止
+        timer_frame = ttk.Frame(config_frame)
+        timer_frame.pack(fill="x", pady=8)
+        auto_stop_var = tk.BooleanVar(value=self.auto_stop_enabled)
+        ttk.Checkbutton(timer_frame, text="定時停止:", variable=auto_stop_var).pack(side="left")
+        timer_minutes_var = tk.StringVar(value=str(self.auto_stop_minutes))
+        timer_combo = ttk.Combobox(timer_frame, textvariable=timer_minutes_var, width=6,
+                                   values=["5", "10", "15", "30", "60", "120"])
+        timer_combo.pack(side="left", padx=5)
+        ttk.Label(timer_frame, text="分鐘後自動停止").pack(side="left")
+
         ttk.Separator(config_frame, orient="horizontal").pack(fill="x", pady=20)
 
         # 儲存按鈕
@@ -989,8 +1010,11 @@ class TrayClicker:
                 self.similarity_threshold = int(threshold_var.get()) / 100.0
                 self.click_cooldown = float(cooldown_var.get())
                 self.block_input_enabled = block_var.get()
+                self.auto_stop_enabled = auto_stop_var.get()
+                self.auto_stop_minutes = int(timer_minutes_var.get())
                 self._save_stats()
-                self.status_var.set(f"設定已儲存：閾值 {self.similarity_threshold:.0%}，冷卻 {self.click_cooldown}s")
+                timer_msg = f"，定時 {self.auto_stop_minutes}分" if self.auto_stop_enabled else ""
+                self.status_var.set(f"設定已儲存：閾值 {self.similarity_threshold:.0%}，冷卻 {self.click_cooldown}s{timer_msg}")
                 settings_win.destroy()
             except ValueError:
                 self.status_var.set("設定值無效")
@@ -1209,6 +1233,7 @@ class TrayClicker:
             if self.template is None:
                 return
             self.mode = "auto"
+            self.auto_start_time = time.time()  # 記錄開始時間
         self.mode_var.set("auto")
         self.update_icon()
         self.start_auto_thread()
@@ -1226,6 +1251,24 @@ class TrayClicker:
             self.mode = "off"
         self.mode_var.set("off")
         self.update_icon()
+
+    def _auto_stop_triggered(self):
+        """定時停止觸發"""
+        with self._lock:
+            self.mode = "off"
+            self.auto_start_time = None
+        # 在主執行緒更新 UI
+        if self.root:
+            self.root.after(0, lambda: self._on_auto_stop_complete())
+
+    def _on_auto_stop_complete(self):
+        """定時停止後更新 UI"""
+        self.mode_var.set("off")
+        self._update_start_button()
+        self.update_icon()
+        minutes = self.auto_stop_minutes
+        self.status_var.set(f"已運行 {minutes} 分鐘，自動停止")
+        self._show_toast(f"已運行 {minutes} 分鐘\n自動停止", duration=3000)
 
     def take_screenshot(self):
         """截圖"""
@@ -1645,6 +1688,14 @@ class TrayClicker:
 
             if current_mode != "auto":
                 break
+
+            # 定時停止檢查
+            if self.auto_stop_enabled and self.auto_start_time:
+                elapsed = time.time() - self.auto_start_time
+                if elapsed >= self.auto_stop_minutes * 60:
+                    # 時間到，停止自動模式
+                    self._auto_stop_triggered()
+                    break
 
             if not templates or not templates_gray:
                 time.sleep(auto_interval)
