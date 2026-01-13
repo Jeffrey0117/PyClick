@@ -977,7 +977,7 @@ class TrayClicker:
         self.status_var.set(f"模板已儲存: {name}")
 
     def _load_selected_template(self):
-        """載入選中的模板（新增到列表）"""
+        """載入選中的模板（新增到列表，防止重複）"""
         import os
         selection = self.template_listbox.curselection()
         if not selection:
@@ -986,6 +986,11 @@ class TrayClicker:
         name = self.template_listbox.get(selection[0])
         template_dir = os.path.join(os.path.dirname(__file__), "templates")
         filepath = os.path.join(template_dir, f"{name}.png")
+
+        # 檢查是否已載入（防止重複）
+        if filepath in self.current_script.template_paths:
+            self.status_var.set(f"模板 {name} 已存在，不重複載入")
+            return
 
         new_template = cv2.imread(filepath)
         if new_template is not None:
