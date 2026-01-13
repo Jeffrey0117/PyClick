@@ -165,6 +165,12 @@ class TrayClicker:
         # 執行緒鎖
         self._lock = threading.Lock()
 
+        # ROI 優化：記錄上次匹配位置
+        self._last_match_pos = None  # (x, y) 上次找到的螢幕位置
+        self._roi_margin = 200       # ROI 邊距像素
+        self._roi_miss_count = 0     # ROI 連續未找到次數
+        self._roi_max_miss = 3       # 超過此次數回退到全螢幕搜尋
+
         # 音效提示
         self.sound_enabled = True
 
@@ -1451,7 +1457,7 @@ class TrayClicker:
         self.increment_click_count(click_count)
 
     def _auto_loop(self):
-        """自動偵測（不搶焦點）"""
+        """自動偵測（不搶焦點）- 含 ROI 優化"""
         while self.running:
             # 執行緒安全：讀取共享狀態
             with self._lock:
@@ -1459,6 +1465,7 @@ class TrayClicker:
                 template = self.template.copy() if self.template is not None else None
                 auto_interval = self.auto_interval
                 continuous_click = self.continuous_click
+                last_match_pos = self._last_match_pos
 
             if current_mode != "auto":
                 break
@@ -1473,6 +1480,7 @@ class TrayClicker:
                     screen = np.array(sct.grab(monitor))
                     screen_bgr = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
                     ox, oy = monitor["left"], monitor["top"]
+                    screen_h, screen_w = screen_bgr.shape[:2]
 
                 # Hash 比對 (使用內建 hash 更快)
                 small = cv2.resize(screen_bgr, (160, 90))
@@ -1484,19 +1492,48 @@ class TrayClicker:
                         continue
                     self.last_screen_hash = screen_hash
 
-                # 模板匹配
-                result = cv2.matchTemplate(screen_bgr, template, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                th, tw = template.shape[:2]
+                max_val = 0
+                max_loc = None
+                roi_offset = (0, 0)
+
+                # ROI 優化：先在上次位置附近搜尋
+                if last_match_pos and self._roi_miss_count < self._roi_max_miss:
+                    lx, ly = last_match_pos
+                    # 計算 ROI 範圍（螢幕座標轉圖片座標）
+                    roi_x1 = max(0, lx - ox - self._roi_margin)
+                    roi_y1 = max(0, ly - oy - self._roi_margin)
+                    roi_x2 = min(screen_w, lx - ox + tw + self._roi_margin)
+                    roi_y2 = min(screen_h, ly - oy + th + self._roi_margin)
+
+                    if roi_x2 - roi_x1 >= tw and roi_y2 - roi_y1 >= th:
+                        roi = screen_bgr[roi_y1:roi_y2, roi_x1:roi_x2]
+                        result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+                        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                        roi_offset = (roi_x1, roi_y1)
+
+                # ROI 沒找到，回退到全螢幕搜尋
+                if max_val < 0.7:
+                    result = cv2.matchTemplate(screen_bgr, template, cv2.TM_CCOEFF_NORMED)
+                    _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                    roi_offset = (0, 0)
+                    if last_match_pos:
+                        self._roi_miss_count += 1
 
                 if max_val >= 0.7:
+                    self._roi_miss_count = 0
+
                     # 檢查冷卻（連續模式跳過冷卻檢查）
                     with self._lock:
                         cooldown_passed = continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
 
                     if cooldown_passed:
-                        th, tw = template.shape[:2]
-                        cx = max_loc[0] + tw // 2 + ox
-                        cy = max_loc[1] + th // 2 + oy
+                        cx = max_loc[0] + roi_offset[0] + tw // 2 + ox
+                        cy = max_loc[1] + roi_offset[1] + th // 2 + oy
+
+                        # 更新上次匹配位置
+                        with self._lock:
+                            self._last_match_pos = (cx, cy)
 
                         # 執行動作序列
                         self._execute_action_sequence(cx, cy)
@@ -1504,6 +1541,9 @@ class TrayClicker:
                         with self._lock:
                             self.last_click_time = time.time()
                             self.last_screen_hash = None
+
+                # 釋放大型陣列
+                del screen_bgr, screen
 
                 time.sleep(auto_interval)
 
