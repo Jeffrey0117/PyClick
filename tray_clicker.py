@@ -23,6 +23,7 @@ import os
 import json
 import winsound
 import logging
+import random
 from datetime import datetime
 
 from utils import (
@@ -169,6 +170,10 @@ class TrayClicker:
         self.auto_stop_minutes = 30      # 運行多少分鐘後停止
         self.auto_start_time = None      # 自動模式開始時間
 
+        # 點擊偏移（防偵測）
+        self.click_offset_enabled = False  # 是否啟用隨機偏移
+        self.click_offset_range = 5        # 偏移範圍（像素）
+
         # 設定檔路徑
         self.config_path = os.path.join(os.path.dirname(__file__), "config.json")
 
@@ -235,6 +240,8 @@ class TrayClicker:
                     self.block_input_enabled = config.get("block_input_enabled", False)
                     self.auto_stop_enabled = config.get("auto_stop_enabled", False)
                     self.auto_stop_minutes = config.get("auto_stop_minutes", 30)
+                    self.click_offset_enabled = config.get("click_offset_enabled", False)
+                    self.click_offset_range = config.get("click_offset_range", 5)
             except Exception as e:
                 logger.warning(f"載入設定失敗: {e}")
 
@@ -253,6 +260,8 @@ class TrayClicker:
             config["block_input_enabled"] = self.block_input_enabled
             config["auto_stop_enabled"] = self.auto_stop_enabled
             config["auto_stop_minutes"] = self.auto_stop_minutes
+            config["click_offset_enabled"] = self.click_offset_enabled
+            config["click_offset_range"] = self.click_offset_range
             config["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
             with open(self.config_path, "w", encoding="utf-8") as f:
@@ -1002,6 +1011,17 @@ class TrayClicker:
         timer_combo.pack(side="left", padx=5)
         ttk.Label(timer_frame, text="分鐘後自動停止").pack(side="left")
 
+        # 點擊偏移
+        offset_frame = ttk.Frame(config_frame)
+        offset_frame.pack(fill="x", pady=8)
+        offset_var = tk.BooleanVar(value=self.click_offset_enabled)
+        ttk.Checkbutton(offset_frame, text="隨機偏移:", variable=offset_var).pack(side="left")
+        offset_range_var = tk.StringVar(value=str(self.click_offset_range))
+        offset_combo = ttk.Combobox(offset_frame, textvariable=offset_range_var, width=6,
+                                    values=["3", "5", "10", "15", "20"])
+        offset_combo.pack(side="left", padx=5)
+        ttk.Label(offset_frame, text="像素 (防偵測)").pack(side="left")
+
         ttk.Separator(config_frame, orient="horizontal").pack(fill="x", pady=20)
 
         # 儲存按鈕
@@ -1012,9 +1032,12 @@ class TrayClicker:
                 self.block_input_enabled = block_var.get()
                 self.auto_stop_enabled = auto_stop_var.get()
                 self.auto_stop_minutes = int(timer_minutes_var.get())
+                self.click_offset_enabled = offset_var.get()
+                self.click_offset_range = int(offset_range_var.get())
                 self._save_stats()
                 timer_msg = f"，定時 {self.auto_stop_minutes}分" if self.auto_stop_enabled else ""
-                self.status_var.set(f"設定已儲存：閾值 {self.similarity_threshold:.0%}，冷卻 {self.click_cooldown}s{timer_msg}")
+                offset_msg = f"，偏移 ±{self.click_offset_range}px" if self.click_offset_enabled else ""
+                self.status_var.set(f"設定已儲存：閾值 {self.similarity_threshold:.0%}{timer_msg}{offset_msg}")
                 settings_win.destroy()
             except ValueError:
                 self.status_var.set("設定值無效")
@@ -1628,6 +1651,13 @@ class TrayClicker:
         if self.sound_enabled:
             threading.Thread(target=lambda: winsound.Beep(1000, 100), daemon=True).start()
             time.sleep(0.3)  # 給人反應時間
+
+        # 隨機偏移（防偵測）
+        if self.click_offset_enabled and self.click_offset_range > 0:
+            offset_x = random.randint(-self.click_offset_range, self.click_offset_range)
+            offset_y = random.randint(-self.click_offset_range, self.click_offset_range)
+            cx += offset_x
+            cy += offset_y
 
         click_count = self.current_script.click_count
         click_interval = self.current_script.click_interval

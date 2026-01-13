@@ -23,6 +23,7 @@ from PIL import Image, ImageDraw
 import ctypes
 import winsound
 import keyboard
+import random
 
 # Windows API
 user32 = ctypes.windll.user32
@@ -140,6 +141,10 @@ class LiteRunner:
         self.auto_stop_minutes = 30
         self.auto_start_time = None
 
+        # 點擊偏移
+        self.click_offset_enabled = False
+        self.click_offset_range = 5
+
         # 狀態
         self.last_click_time = 0
         self.click_cooldown = 1.0
@@ -176,6 +181,8 @@ class LiteRunner:
             self.hotkey = self.config.get("hotkey", "F6")
             self.auto_stop_enabled = self.config.get("auto_stop_enabled", False)
             self.auto_stop_minutes = self.config.get("auto_stop_minutes", 30)
+            self.click_offset_enabled = self.config.get("click_offset_enabled", False)
+            self.click_offset_range = self.config.get("click_offset_range", 5)
 
             # 載入模板圖片
             template_data = self.config.get("template_data")
@@ -477,6 +484,13 @@ class LiteRunner:
         if self.sound_enabled:
             threading.Thread(target=lambda: winsound.Beep(1000, 100), daemon=True).start()
             time.sleep(0.3)  # 給人反應時間
+
+        # 隨機偏移（防偵測）
+        if self.click_offset_enabled and self.click_offset_range > 0:
+            offset_x = random.randint(-self.click_offset_range, self.click_offset_range)
+            offset_y = random.randint(-self.click_offset_range, self.click_offset_range)
+            cx += offset_x
+            cy += offset_y
 
         # 保存狀態
         original_pos = pyautogui.position()
