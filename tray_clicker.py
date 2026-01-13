@@ -89,6 +89,7 @@ class TrayClicker:
         self.continuous_click = False  # 連續點擊模式
         self.total_clicks = 0  # 本次啟動點擊計數
         self.lifetime_clicks = 0  # 累計總點擊次數
+        self.similarity_threshold = 0.7  # 相似度閾值（可設定）
 
         # 設定檔路徑
         self.config_path = os.path.join(os.path.dirname(__file__), "config.json")
@@ -125,18 +126,20 @@ class TrayClicker:
         self.setup_hotkey()
 
     def _load_stats(self):
-        """載入統計資料"""
+        """載入統計資料和設定"""
         if os.path.exists(self.config_path):
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
                     config = json.load(f)
                     self.lifetime_clicks = config.get("lifetime_clicks", 0)
                     self.sound_enabled = config.get("sound_enabled", True)
+                    self.similarity_threshold = config.get("similarity_threshold", 0.7)
+                    self.click_cooldown = config.get("click_cooldown", 1.0)
             except Exception as e:
                 print(f"[PyClick] 載入設定失敗: {e}")
 
     def _save_stats(self):
-        """儲存統計資料"""
+        """儲存統計資料和設定"""
         try:
             config = {}
             if os.path.exists(self.config_path):
@@ -145,6 +148,8 @@ class TrayClicker:
 
             config["lifetime_clicks"] = self.lifetime_clicks
             config["sound_enabled"] = self.sound_enabled
+            config["similarity_threshold"] = self.similarity_threshold
+            config["click_cooldown"] = self.click_cooldown
             config["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
             with open(self.config_path, "w", encoding="utf-8") as f:
@@ -789,27 +794,49 @@ class TrayClicker:
 
         ttk.Label(config_frame, text="個人化設定", font=("", 12, "bold")).pack(anchor="w", pady=(0, 15))
 
-        # 相似度門檻
+        # 相似度閾值
         threshold_frame = ttk.Frame(config_frame)
-        threshold_frame.pack(fill="x", pady=5)
-        ttk.Label(threshold_frame, text="相似度門檻:").pack(side="left")
-        ttk.Label(threshold_frame, text="70%（預設）", foreground="gray").pack(side="left", padx=10)
+        threshold_frame.pack(fill="x", pady=8)
+        ttk.Label(threshold_frame, text="相似度閾值:", width=12).pack(side="left")
+        threshold_var = tk.StringVar(value=str(int(self.similarity_threshold * 100)))
+        threshold_combo = ttk.Combobox(threshold_frame, textvariable=threshold_var, width=8,
+                                        values=["50", "60", "70", "80", "90"])
+        threshold_combo.pack(side="left", padx=5)
+        ttk.Label(threshold_frame, text="%").pack(side="left")
+        ttk.Label(threshold_frame, text="(越低越容易匹配，但可能誤判)", foreground="gray", font=("", 8)).pack(side="left", padx=10)
 
         # 點擊冷卻
         cooldown_frame = ttk.Frame(config_frame)
-        cooldown_frame.pack(fill="x", pady=5)
-        ttk.Label(cooldown_frame, text="點擊冷卻:").pack(side="left")
-        ttk.Label(cooldown_frame, text=f"{self.click_cooldown} 秒", foreground="gray").pack(side="left", padx=10)
+        cooldown_frame.pack(fill="x", pady=8)
+        ttk.Label(cooldown_frame, text="點擊冷卻:", width=12).pack(side="left")
+        cooldown_var = tk.StringVar(value=str(self.click_cooldown))
+        cooldown_combo = ttk.Combobox(cooldown_frame, textvariable=cooldown_var, width=8,
+                                       values=["0.5", "1.0", "1.5", "2.0", "3.0", "5.0"])
+        cooldown_combo.pack(side="left", padx=5)
+        ttk.Label(cooldown_frame, text="秒").pack(side="left")
+        ttk.Label(cooldown_frame, text="(兩次點擊之間的最小間隔)", foreground="gray", font=("", 8)).pack(side="left", padx=10)
 
         # 熱鍵
         hotkey_frame = ttk.Frame(config_frame)
-        hotkey_frame.pack(fill="x", pady=5)
-        ttk.Label(hotkey_frame, text="觸發熱鍵:").pack(side="left")
-        ttk.Label(hotkey_frame, text=self.hotkey, foreground="gray").pack(side="left", padx=10)
+        hotkey_frame.pack(fill="x", pady=8)
+        ttk.Label(hotkey_frame, text="觸發熱鍵:", width=12).pack(side="left")
+        ttk.Label(hotkey_frame, text=self.hotkey, foreground="#4CAF50", font=("", 10, "bold")).pack(side="left", padx=5)
 
         ttk.Separator(config_frame, orient="horizontal").pack(fill="x", pady=20)
 
-        ttk.Label(config_frame, text="更多設定即將推出...", foreground="gray").pack()
+        # 儲存按鈕
+        def save_settings():
+            try:
+                self.similarity_threshold = int(threshold_var.get()) / 100.0
+                self.click_cooldown = float(cooldown_var.get())
+                self._save_stats()
+                self.status_var.set(f"設定已儲存：閾值 {self.similarity_threshold:.0%}，冷卻 {self.click_cooldown}s")
+                settings_win.destroy()
+            except ValueError:
+                self.status_var.set("設定值無效")
+
+        tk.Button(config_frame, text="儲存設定", command=save_settings,
+                  bg="#4CAF50", fg="white", font=("", 10, "bold"), width=12).pack(pady=10)
 
     def _load_template_list(self):
         """載入模板列表"""
@@ -1333,14 +1360,14 @@ class TrayClicker:
         th, tw = self.template.shape[:2]
         preview = screen.copy()
 
-        if max_val >= 0.7:
+        if max_val >= self.similarity_threshold:
             cv2.rectangle(preview, max_loc, (max_loc[0]+tw, max_loc[1]+th), (0, 255, 0), 3)
             # 螢幕座標 = 圖片座標 + 偏移
             cx, cy = max_loc[0] + tw//2 + ox, max_loc[1] + th//2 + oy
             cv2.circle(preview, (max_loc[0] + tw//2, max_loc[1] + th//2), 10, (0, 0, 255), -1)
-            self.status_var.set(f"找到！螢幕座標 ({cx}, {cy}) 相似度 {max_val:.0%}")
+            self.status_var.set(f"找到！座標 ({cx}, {cy}) 相似度 {max_val:.0%} (閾值 {self.similarity_threshold:.0%})")
         else:
-            self.status_var.set(f"找不到 (最高相似度 {max_val:.0%})")
+            self.status_var.set(f"找不到 (相似度 {max_val:.0%} < 閾值 {self.similarity_threshold:.0%})")
 
         self.screenshot = screen
         self.selection = None
@@ -1402,6 +1429,7 @@ class TrayClicker:
                 auto_interval = self.auto_interval
                 continuous_click = self.continuous_click
                 last_match_pos = self._last_match_pos
+                threshold = self.similarity_threshold
 
             if current_mode != "auto":
                 break
@@ -1449,14 +1477,14 @@ class TrayClicker:
                         roi_offset = (roi_x1, roi_y1)
 
                 # ROI 沒找到，回退到全螢幕搜尋
-                if max_val < 0.7:
+                if max_val < threshold:
                     result = cv2.matchTemplate(screen_bgr, template, cv2.TM_CCOEFF_NORMED)
                     _, max_val, _, max_loc = cv2.minMaxLoc(result)
                     roi_offset = (0, 0)
                     if last_match_pos:
                         self._roi_miss_count += 1
 
-                if max_val >= 0.7:
+                if max_val >= threshold:
                     self._roi_miss_count = 0
 
                     # 檢查冷卻（連續模式跳過冷卻檢查）
@@ -1500,9 +1528,10 @@ class TrayClicker:
 
     def find_and_click(self):
         """手動找圖點擊"""
-        # 執行緒安全：複製 template
+        # 執行緒安全：複製 template 和設定
         with self._lock:
             template = self.template.copy() if self.template is not None else None
+            threshold = self.similarity_threshold
 
         if template is None:
             return
@@ -1517,7 +1546,7 @@ class TrayClicker:
             result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
-            if max_val < 0.7:
+            if max_val < threshold:
                 return
 
             th, tw = template.shape[:2]
