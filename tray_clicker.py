@@ -870,17 +870,39 @@ class TrayClicker:
         ttk.Button(btn_frame, text="⭐ 設為預設", command=self._set_default_template).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="🗑 刪除選中", command=self._delete_selected_template).pack(side="left", padx=5)
 
-        # 當前模板預覽
-        if self.template is not None:
-            ttk.Label(template_frame, text="當前模板預覽:", font=("", 10)).pack(anchor="w", pady=(10, 5))
-            h, w = self.template.shape[:2]
-            scale = min(150/w, 100/h, 1.0)
-            thumb = cv2.resize(self.template, (int(w*scale), int(h*scale)))
-            thumb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
-            photo = ImageTk.PhotoImage(Image.fromarray(thumb))
-            preview_label = ttk.Label(template_frame, image=photo)
-            preview_label.image = photo
-            preview_label.pack(anchor="w")
+        # 當前已載入的模板預覽（顯示所有）
+        ttk.Separator(template_frame, orient="horizontal").pack(fill="x", pady=10)
+        loaded_label = ttk.Label(template_frame, text=f"當前已載入: {len(self.templates)} 個模板", font=("", 10, "bold"))
+        loaded_label.pack(anchor="w", pady=(5, 5))
+
+        if self.templates:
+            # 水平排列的預覽框架
+            preview_container = ttk.Frame(template_frame)
+            preview_container.pack(fill="x", anchor="w")
+
+            for i, template in enumerate(self.templates):
+                # 每個模板的框架
+                item_frame = ttk.Frame(preview_container)
+                item_frame.pack(side="left", padx=5, pady=5)
+
+                # 縮略圖
+                h, w = template.shape[:2]
+                scale = min(80/w, 60/h, 1.0)
+                thumb = cv2.resize(template, (int(w*scale), int(h*scale)))
+                thumb = cv2.cvtColor(thumb, cv2.COLOR_BGR2RGB)
+                photo = ImageTk.PhotoImage(Image.fromarray(thumb))
+                img_label = ttk.Label(item_frame, image=photo)
+                img_label.image = photo  # 保持引用
+                img_label.pack()
+
+                # 編號
+                ttk.Label(item_frame, text=f"#{i+1}", font=("", 8)).pack()
+
+            # 清除按鈕
+            ttk.Button(preview_container, text="🗑 清除全部",
+                       command=lambda: [self._clear_templates(), settings_win.destroy()]).pack(side="left", padx=20)
+        else:
+            ttk.Label(template_frame, text="(尚未載入模板)", foreground="gray").pack(anchor="w")
 
         # === 頁籤3：設定 ===
         config_frame = ttk.Frame(notebook, padding=20)
