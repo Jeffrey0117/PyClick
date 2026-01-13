@@ -487,19 +487,25 @@ class TrayClicker:
 
     def toggle_auto_mode(self):
         """切換自動模式（大按鈕用）"""
-        if self.mode == "auto":
+        with self._lock:
+            current_mode = self.mode
+            has_template = self.template is not None
+
+        if current_mode == "auto":
             # 停止
-            self.mode = "off"
+            with self._lock:
+                self.mode = "off"
             self.mode_var.set("off")
             self._update_start_button()
             self.update_icon()
             self.status_var.set("已停止")
         else:
             # 開始
-            if self.template is None:
+            if not has_template:
                 self.status_var.set("請先儲存模板！")
                 return
-            self.mode = "auto"
+            with self._lock:
+                self.mode = "auto"
             self.mode_var.set("auto")
             self._update_start_button()
             self.update_icon()
@@ -524,21 +530,26 @@ class TrayClicker:
     def on_mode_change(self):
         """模式改變"""
         new_mode = self.mode_var.get()
-        if new_mode in ["hotkey", "auto"] and self.template is None:
+
+        with self._lock:
+            has_template = self.template is not None
+
+        if new_mode in ["hotkey", "auto"] and not has_template:
             self.status_var.set("請先儲存模板！")
             self.mode_var.set("off")
             return
 
-        self.mode = new_mode
+        with self._lock:
+            self.mode = new_mode
         self._update_start_button()
         self.update_icon()
 
-        if self.mode == "auto":
+        if new_mode == "auto":
             self.start_auto_thread()
             self.status_var.set(f"自動模式開啟 - 視窗將縮小")
             # 自動縮小避免點到自己
             self.root.after(500, self.hide_to_tray)
-        elif self.mode == "hotkey":
+        elif new_mode == "hotkey":
             self.status_var.set("熱鍵模式：按 F6 找圖點擊")
         else:
             self.status_var.set("已停用")
@@ -616,7 +627,8 @@ class TrayClicker:
         name = self.script_var.get()
         if name == "(新腳本)":
             self.current_script = SimpleScript()
-            self.template = None
+            with self._lock:
+                self.template = None
             self._update_ui_from_script()
             self.status_var.set("新腳本")
             return
@@ -669,9 +681,12 @@ class TrayClicker:
     def _load_template_from_script(self):
         """從腳本載入模板圖片"""
         if self.current_script.template_path and os.path.exists(self.current_script.template_path):
-            self.template = cv2.imread(self.current_script.template_path)
+            new_template = cv2.imread(self.current_script.template_path)
         else:
-            self.template = None
+            new_template = None
+
+        with self._lock:
+            self.template = new_template
 
     def save_script(self):
         """儲存當前腳本"""
@@ -716,7 +731,8 @@ class TrayClicker:
         self._refresh_script_list()
         self.script_var.set("(新腳本)")
         self.current_script = SimpleScript()
-        self.template = None
+        with self._lock:
+            self.template = None
         self._update_ui_from_script()
         self.status_var.set(f"已刪除: {name}")
 
@@ -897,10 +913,12 @@ class TrayClicker:
         template_dir = os.path.join(os.path.dirname(__file__), "templates")
         filepath = os.path.join(template_dir, f"{name}.png")
 
-        self.template = cv2.imread(filepath)
-        if self.template is not None:
+        new_template = cv2.imread(filepath)
+        if new_template is not None:
+            with self._lock:
+                self.template = new_template
             self.update_icon()
-            h, w = self.template.shape[:2]
+            h, w = new_template.shape[:2]
             self.template_info.config(text=f"{name} ({w}x{h})", foreground="green")
             self.status_var.set(f"已載入模板: {name}")
 
@@ -1027,22 +1045,25 @@ class TrayClicker:
         listbox.bind("<Double-Button-1>", lambda e: on_load())
 
     def set_auto_mode(self, icon=None, item=None):
-        if self.template is None:
-            return
-        self.mode = "auto"
+        with self._lock:
+            if self.template is None:
+                return
+            self.mode = "auto"
         self.mode_var.set("auto")
         self.update_icon()
         self.start_auto_thread()
 
     def set_hotkey_mode(self, icon=None, item=None):
-        if self.template is None:
-            return
-        self.mode = "hotkey"
+        with self._lock:
+            if self.template is None:
+                return
+            self.mode = "hotkey"
         self.mode_var.set("hotkey")
         self.update_icon()
 
     def set_off_mode(self, icon=None, item=None):
-        self.mode = "off"
+        with self._lock:
+            self.mode = "off"
         self.mode_var.set("off")
         self.update_icon()
 
@@ -1215,8 +1236,11 @@ class TrayClicker:
             return
 
         x1, y1, x2, y2 = self.selection
-        self.template = self.screenshot[y1:y2, x1:x2].copy()
-        self.last_screen_hash = None
+        new_template = self.screenshot[y1:y2, x1:x2].copy()
+
+        with self._lock:
+            self.template = new_template
+            self.last_screen_hash = None
 
         # 自動儲存模板圖片
         template_dir = os.path.join(os.path.dirname(__file__), "templates")
@@ -1428,7 +1452,21 @@ class TrayClicker:
 
     def _auto_loop(self):
         """自動偵測（不搶焦點）"""
-        while self.running and self.mode == "auto":
+        while self.running:
+            # 執行緒安全：讀取共享狀態
+            with self._lock:
+                current_mode = self.mode
+                template = self.template.copy() if self.template is not None else None
+                auto_interval = self.auto_interval
+                continuous_click = self.continuous_click
+
+            if current_mode != "auto":
+                break
+
+            if template is None:
+                time.sleep(auto_interval)
+                continue
+
             try:
                 with mss.mss() as sct:
                     monitor = sct.monitors[0]
@@ -1436,27 +1474,27 @@ class TrayClicker:
                     screen_bgr = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
                     ox, oy = monitor["left"], monitor["top"]
 
-                # Hash 比對
+                # Hash 比對 (使用內建 hash 更快)
                 small = cv2.resize(screen_bgr, (160, 90))
-                screen_hash = hashlib.md5(small.tobytes()).hexdigest()
+                screen_hash = hash(small.tobytes())
 
                 with self._lock:
                     if screen_hash == self.last_screen_hash:
-                        time.sleep(self.auto_interval)
+                        time.sleep(auto_interval)
                         continue
                     self.last_screen_hash = screen_hash
 
                 # 模板匹配
-                result = cv2.matchTemplate(screen_bgr, self.template, cv2.TM_CCOEFF_NORMED)
+                result = cv2.matchTemplate(screen_bgr, template, cv2.TM_CCOEFF_NORMED)
                 _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
                 if max_val >= 0.7:
                     # 檢查冷卻（連續模式跳過冷卻檢查）
                     with self._lock:
-                        cooldown_passed = self.continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
+                        cooldown_passed = continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
 
                     if cooldown_passed:
-                        th, tw = self.template.shape[:2]
+                        th, tw = template.shape[:2]
                         cx = max_loc[0] + tw // 2 + ox
                         cy = max_loc[1] + th // 2 + oy
 
@@ -1467,21 +1505,32 @@ class TrayClicker:
                             self.last_click_time = time.time()
                             self.last_screen_hash = None
 
-                time.sleep(self.auto_interval)
+                time.sleep(auto_interval)
 
             except Exception as e:
                 # 記錄錯誤但不中斷
                 print(f"[PyClick] 自動模式錯誤: {e}")
-                time.sleep(self.auto_interval)
+                time.sleep(auto_interval)
 
     def on_hotkey(self):
         """熱鍵觸發"""
-        if self.mode != "hotkey" or self.template is None:
+        with self._lock:
+            current_mode = self.mode
+            has_template = self.template is not None
+
+        if current_mode != "hotkey" or not has_template:
             return
         threading.Thread(target=self.find_and_click, daemon=True).start()
 
     def find_and_click(self):
         """手動找圖點擊"""
+        # 執行緒安全：複製 template
+        with self._lock:
+            template = self.template.copy() if self.template is not None else None
+
+        if template is None:
+            return
+
         try:
             with mss.mss() as sct:
                 monitor = sct.monitors[0]
@@ -1489,13 +1538,13 @@ class TrayClicker:
                 screen = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
                 ox, oy = monitor["left"], monitor["top"]
 
-            result = cv2.matchTemplate(screen, self.template, cv2.TM_CCOEFF_NORMED)
+            result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
             if max_val < 0.7:
                 return
 
-            th, tw = self.template.shape[:2]
+            th, tw = template.shape[:2]
             cx = max_loc[0] + tw // 2 + ox
             cy = max_loc[1] + th // 2 + oy
 
