@@ -24,7 +24,13 @@ import json
 import winsound
 import logging
 import random
+import urllib.request
+import webbrowser
 from datetime import datetime
+
+# 版本資訊
+__version__ = "1.2.0"
+GITHUB_REPO = "Jeffrey0117/PyClick"
 
 from utils import (
     force_focus, click_no_focus, check_single_instance,
@@ -1042,8 +1048,47 @@ class TrayClicker:
             except ValueError:
                 self.status_var.set("設定值無效")
 
-        tk.Button(config_frame, text="儲存設定", command=save_settings,
-                  bg="#4CAF50", fg="white", font=("", 10, "bold"), width=12).pack(pady=10)
+        btn_row = ttk.Frame(config_frame)
+        btn_row.pack(pady=10)
+        tk.Button(btn_row, text="儲存設定", command=save_settings,
+                  bg="#4CAF50", fg="white", font=("", 10, "bold"), width=12).pack(side="left", padx=5)
+        tk.Button(btn_row, text="檢查更新", command=self._check_update,
+                  bg="#2196F3", fg="white", font=("", 10), width=10).pack(side="left", padx=5)
+
+        # 版本資訊
+        ttk.Label(config_frame, text=f"目前版本: v{__version__}", foreground="gray").pack()
+
+    def _check_update(self):
+        """檢查 GitHub 更新"""
+        def check():
+            try:
+                url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+                req = urllib.request.Request(url, headers={"User-Agent": "PyClick"})
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    data = json.loads(response.read().decode())
+                    latest = data.get("tag_name", "").lstrip("v")
+                    html_url = data.get("html_url", "")
+
+                    if latest and latest != __version__:
+                        # 有新版本
+                        self.root.after(0, lambda: self._show_update_dialog(latest, html_url))
+                    else:
+                        self.root.after(0, lambda: self.status_var.set(f"已是最新版本 v{__version__}"))
+            except Exception as e:
+                self.root.after(0, lambda: self.status_var.set(f"檢查更新失敗: {e}"))
+
+        self.status_var.set("檢查更新中...")
+        threading.Thread(target=check, daemon=True).start()
+
+    def _show_update_dialog(self, version, url):
+        """顯示更新對話框"""
+        from tkinter import messagebox
+        result = messagebox.askyesno(
+            "發現新版本",
+            f"目前版本: v{__version__}\n最新版本: v{version}\n\n是否開啟下載頁面？"
+        )
+        if result and url:
+            webbrowser.open(url)
 
     def _load_template_list(self):
         """載入模板列表"""
