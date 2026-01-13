@@ -139,15 +139,16 @@ class ExportDialog:
         try:
             self._update_progress("建立設定檔...")
 
-            # 準備設定
+            # 準備設定（從腳本讀取）
             config = {
                 "name": self.name_var.get(),
-                "scan_interval": 0.5,
-                "threshold": 0.7,
+                "scan_interval": getattr(self.script, 'auto_interval', 0.5),
+                "threshold": getattr(self.script, 'threshold', 0.7),
                 "click_count": self.script.click_count,
                 "click_interval": self.script.click_interval,
                 "after_key": self.script.after_key,
                 "sound_enabled": self.sound_var.get(),
+                "hotkey": "F6",  # 快捷鍵
             }
 
             # 編碼模板圖片

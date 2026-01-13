@@ -22,6 +22,7 @@ from pystray import MenuItem as Item
 from PIL import Image, ImageDraw
 import ctypes
 import winsound
+import keyboard
 
 # Windows API
 user32 = ctypes.windll.user32
@@ -130,6 +131,10 @@ class LiteRunner:
         self.after_key = ""
         self.script_name = "PyClick Script"
 
+        # 快捷鍵
+        self.hotkey = "F6"
+        self.hotkey_enabled = True
+
         # 狀態
         self.last_click_time = 0
         self.click_cooldown = 1.0
@@ -141,6 +146,9 @@ class LiteRunner:
 
         # 載入資源
         self._load_embedded_resources()
+
+        # 設定快捷鍵
+        self._setup_hotkey()
 
     def _load_embedded_resources(self):
         """載入內嵌資源"""
@@ -160,11 +168,36 @@ class LiteRunner:
             self.click_interval = self.config.get("click_interval", 0.1)
             self.after_key = self.config.get("after_key", "")
             self.sound_enabled = self.config.get("sound_enabled", True)
+            self.hotkey = self.config.get("hotkey", "F6")
 
             # 載入模板圖片
             template_data = self.config.get("template_data")
             if template_data:
                 self.template = decode_image(template_data)
+
+    def _setup_hotkey(self):
+        """設定快捷鍵"""
+        try:
+            keyboard.add_hotkey(self.hotkey, self._on_hotkey)
+        except Exception as e:
+            print(f"快捷鍵設定失敗: {e}")
+
+    def _on_hotkey(self):
+        """快捷鍵觸發：切換自動模式"""
+        if self.template is None:
+            return
+
+        if self.mode == "auto":
+            self.mode = "off"
+        else:
+            self.mode = "auto"
+            self.start_auto_thread()
+
+        self.update_icon()
+
+        # 更新 UI（如果面板開啟）
+        if self.root and self.root.winfo_exists():
+            self.root.after(0, self._update_control_buttons)
 
     def create_icon_image(self):
         """建立托盤圖示"""
@@ -286,6 +319,14 @@ class LiteRunner:
         ttk.Checkbutton(row4, text="執行前播放提示音",
                         variable=self.sound_var).pack(side="left")
 
+        # 快捷鍵顯示
+        row5 = ttk.Frame(settings_frame)
+        row5.pack(fill="x", pady=5)
+        ttk.Label(row5, text="快捷鍵:").pack(side="left")
+        tk.Label(row5, text=self.hotkey, fg="#4CAF50",
+                 font=("Microsoft JhengHei", 10, "bold")).pack(side="left", padx=5)
+        ttk.Label(row5, text="(開始/停止)", foreground="gray").pack(side="left")
+
         # 控制區
         control_frame = ttk.LabelFrame(self.root, text="控制", padding=15)
         control_frame.pack(fill="x", padx=20, pady=10)
@@ -346,7 +387,7 @@ class LiteRunner:
         # 使用提示
         tip_label = tk.Label(
             self.root,
-            text="💡 按「開始」執行自動偵測，關閉視窗後可從托盤圖示重新開啟",
+            text=f"💡 按「開始」或 {self.hotkey} 執行，關閉視窗可從托盤重開",
             font=("Microsoft JhengHei", 9),
             fg="#666666"
         )
