@@ -327,13 +327,15 @@ class TrayClicker:
         row3 = ttk.Frame(ctrl_frame)
         row3.pack(fill="x", padx=10, pady=5)
 
-        # 大大的開始/停止按鈕
+        # 大大的開始/停止按鈕（美化版）
         self.start_btn = tk.Button(
-            row3, text="▶ 開始自動點擊", width=16, height=1,
-            bg="#4CAF50", fg="white", font=("Microsoft JhengHei", 11, "bold"),
-            relief="raised", cursor="hand2", command=self.toggle_auto_mode
+            row3, text="▶ 開始", width=10, height=1,
+            bg="#2E7D32", fg="white", font=("Microsoft JhengHei", 12, "bold"),
+            activebackground="#1B5E20", activeforeground="white",
+            relief="flat", bd=0, cursor="hand2", command=self.toggle_auto_mode,
+            padx=15, pady=5
         )
-        self.start_btn.pack(side="left", padx=10)
+        self.start_btn.pack(side="left", padx=10, ipady=3)
 
         ttk.Separator(row3, orient="vertical").pack(side="left", fill="y", padx=5)
 
@@ -551,13 +553,13 @@ class TrayClicker:
         """更新開始按鈕外觀"""
         if self.mode == "auto":
             self.start_btn.config(
-                text="■ 停止", bg="#f44336",
-                font=("Microsoft JhengHei", 11, "bold")
+                text="■ 停止", bg="#C62828", activebackground="#B71C1C",
+                font=("Microsoft JhengHei", 12, "bold")
             )
         else:
             self.start_btn.config(
-                text="▶ 開始自動點擊", bg="#4CAF50",
-                font=("Microsoft JhengHei", 11, "bold")
+                text="▶ 開始", bg="#2E7D32", activebackground="#1B5E20",
+                font=("Microsoft JhengHei", 12, "bold")
             )
 
     def on_mode_change(self):
