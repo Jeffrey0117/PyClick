@@ -514,6 +514,8 @@ class TrayClicker:
         self.root.lift()
         self.root.focus_force()
         self.panel_visible = True
+        # 恢復時刷新計數器（修復隱藏時不更新的問題）
+        self._update_counter_ui()
 
     def hide_to_tray(self):
         """隱藏到托盤"""
