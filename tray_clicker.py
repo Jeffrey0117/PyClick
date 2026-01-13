@@ -47,6 +47,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger('PyClick')
 
+# ============================================================
+# 輸入保護機制
+# ============================================================
+import atexit
+
+def is_admin():
+    """檢查是否有管理員權限"""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
+
+def ensure_input_unblocked():
+    """確保輸入解鎖（安全機制）"""
+    try:
+        user32.BlockInput(False)
+    except:
+        pass
+
+# 程式退出時確保解鎖
+atexit.register(ensure_input_unblocked)
+
 
 # ============================================================
 # 簡單腳本資料結構
@@ -128,6 +150,7 @@ class TrayClicker:
         self.total_clicks = 0  # 本次啟動點擊計數
         self.lifetime_clicks = 0  # 累計總點擊次數
         self.similarity_threshold = 0.7  # 相似度閾值（可設定）
+        self.block_input_enabled = False  # 執行時鎖定輸入（需管理員權限）
 
         # 設定檔路徑
         self.config_path = os.path.join(os.path.dirname(__file__), "config.json")
@@ -192,6 +215,7 @@ class TrayClicker:
                     self.sound_enabled = config.get("sound_enabled", True)
                     self.similarity_threshold = config.get("similarity_threshold", 0.7)
                     self.click_cooldown = config.get("click_cooldown", 1.0)
+                    self.block_input_enabled = config.get("block_input_enabled", False)
             except Exception as e:
                 logger.warning(f"載入設定失敗: {e}")
 
@@ -207,6 +231,7 @@ class TrayClicker:
             config["sound_enabled"] = self.sound_enabled
             config["similarity_threshold"] = self.similarity_threshold
             config["click_cooldown"] = self.click_cooldown
+            config["block_input_enabled"] = self.block_input_enabled
             config["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
             with open(self.config_path, "w", encoding="utf-8") as f:
@@ -891,6 +916,16 @@ class TrayClicker:
         ttk.Label(hotkey_frame, text="觸發熱鍵:", width=12).pack(side="left")
         ttk.Label(hotkey_frame, text=self.hotkey, foreground="#4CAF50", font=("", 10, "bold")).pack(side="left", padx=5)
 
+        # 輸入保護
+        block_frame = ttk.Frame(config_frame)
+        block_frame.pack(fill="x", pady=8)
+        block_var = tk.BooleanVar(value=self.block_input_enabled)
+        block_check = ttk.Checkbutton(block_frame, text="執行時鎖定輸入", variable=block_var)
+        block_check.pack(side="left")
+        admin_text = "✓ 已有管理員權限" if is_admin() else "⚠ 需要管理員權限"
+        admin_color = "#4CAF50" if is_admin() else "#FF9800"
+        ttk.Label(block_frame, text=admin_text, foreground=admin_color, font=("", 8)).pack(side="left", padx=10)
+
         ttk.Separator(config_frame, orient="horizontal").pack(fill="x", pady=20)
 
         # 儲存按鈕
@@ -898,6 +933,7 @@ class TrayClicker:
             try:
                 self.similarity_threshold = int(threshold_var.get()) / 100.0
                 self.click_cooldown = float(cooldown_var.get())
+                self.block_input_enabled = block_var.get()
                 self._save_stats()
                 self.status_var.set(f"設定已儲存：閾值 {self.similarity_threshold:.0%}，冷卻 {self.click_cooldown}s")
                 settings_win.destroy()
@@ -1484,7 +1520,7 @@ class TrayClicker:
         t.start()
 
     def _execute_action_sequence(self, cx, cy):
-        """執行動作序列：多次點擊 + 按鍵"""
+        """執行動作序列：多次點擊 + 按鍵（可選輸入鎖定）"""
         # 播放提示音（非同步，不阻塞）
         if self.sound_enabled:
             threading.Thread(target=lambda: winsound.Beep(1000, 100), daemon=True).start()
@@ -1498,28 +1534,38 @@ class TrayClicker:
         original_pos = pyautogui.position()
         original_hwnd = user32.GetForegroundWindow()
 
-        # 移動到目標位置（只移動一次）
-        user32.SetCursorPos(cx, cy)
-        time.sleep(0.02)
+        try:
+            # 鎖定輸入（如果啟用且有管理員權限）
+            if self.block_input_enabled:
+                user32.BlockInput(True)
 
-        # 執行多次點擊（不移動游標）
-        for i in range(click_count):
-            user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-            user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-            if i < click_count - 1:
-                time.sleep(click_interval)
+            # 移動到目標位置（只移動一次）
+            user32.SetCursorPos(cx, cy)
+            time.sleep(0.02)
 
-        # 執行後續按鍵（在目標視窗按）
-        if after_key:
-            time.sleep(0.1)
-            pyautogui.press(after_key.lower())
-            time.sleep(0.05)
+            # 執行多次點擊（不移動游標）
+            for i in range(click_count):
+                user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                if i < click_count - 1:
+                    time.sleep(click_interval)
 
-        # 游標回原位
-        user32.SetCursorPos(original_pos[0], original_pos[1])
+            # 執行後續按鍵（在目標視窗按）
+            if after_key:
+                time.sleep(0.1)
+                pyautogui.press(after_key.lower())
+                time.sleep(0.05)
 
-        # 恢復原本視窗焦點
-        force_focus(original_hwnd)
+        finally:
+            # 保證解鎖（即使出錯也會執行）
+            if self.block_input_enabled:
+                user32.BlockInput(False)
+
+            # 游標回原位
+            user32.SetCursorPos(original_pos[0], original_pos[1])
+
+            # 恢復原本視窗焦點
+            force_focus(original_hwnd)
 
         # 更新計數
         self.increment_click_count(click_count)
