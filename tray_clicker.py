@@ -23,6 +23,11 @@ import os
 import json
 import winsound
 
+from utils import (
+    force_focus, click_no_focus, check_single_instance,
+    user32, kernel32, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP
+)
+
 
 # ============================================================
 # 簡單腳本資料結構
@@ -66,75 +71,6 @@ class SimpleScript:
             return cls.from_dict(json.load(f))
 
 pyautogui.FAILSAFE = True
-
-# Windows API for click without focus change
-user32 = ctypes.windll.user32
-
-# 單一實例鎖
-def check_single_instance():
-    """確保只有一個實例運行"""
-    mutex_name = "PyClick_SingleInstance_Mutex"
-    handle = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
-    if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
-        ctypes.windll.kernel32.CloseHandle(handle)
-        return False
-    return True
-kernel32 = ctypes.windll.kernel32
-MOUSEEVENTF_LEFTDOWN = 0x0002
-MOUSEEVENTF_LEFTUP = 0x0004
-
-
-def force_focus(hwnd):
-    """強制恢復視窗焦點（繞過 Windows 限制）"""
-    if not hwnd:
-        return
-
-    # 取得目標視窗的執行緒 ID
-    target_thread = user32.GetWindowThreadProcessId(hwnd, None)
-    # 取得當前執行緒 ID
-    current_thread = kernel32.GetCurrentThreadId()
-
-    # 附加到目標執行緒（這樣才能設定焦點）
-    if target_thread != current_thread:
-        user32.AttachThreadInput(current_thread, target_thread, True)
-
-    # 恢復焦點
-    user32.SetForegroundWindow(hwnd)
-    user32.SetFocus(hwnd)
-    user32.SetActiveWindow(hwnd)
-
-    # 解除附加
-    if target_thread != current_thread:
-        user32.AttachThreadInput(current_thread, target_thread, False)
-
-
-def click_no_focus(x, y, instant=True):
-    """點擊但不改變焦點和前景視窗"""
-    # 儲存原本游標位置
-    original_pos = pyautogui.position()
-
-    # 儲存當前前景視窗（正在使用的視窗）
-    foreground_hwnd = user32.GetForegroundWindow()
-
-    # 移動游標
-    user32.SetCursorPos(x, y)
-
-    if instant:
-        # 瞬間模式：無延遲
-        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-    else:
-        # 穩定模式：有延遲確保點擊被偵測
-        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-        time.sleep(0.01)
-        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-        time.sleep(0.02)
-
-    # 游標回原位
-    user32.SetCursorPos(original_pos[0], original_pos[1])
-
-    # 強制恢復前景視窗焦點
-    force_focus(foreground_hwnd)
 
 
 class TrayClicker:

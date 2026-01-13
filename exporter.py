@@ -6,29 +6,40 @@ PyClick 腳本導出器
 
 import os
 import sys
-import json
-import base64
-import zlib
 import shutil
 import subprocess
 import tempfile
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import filedialog, messagebox
 import threading
 
-
-def encode_config(config_dict):
-    """加密設定"""
-    json_str = json.dumps(config_dict, ensure_ascii=False)
-    compressed = zlib.compress(json_str.encode())
-    encoded = base64.b64encode(compressed)
-    return (encoded[::-1] + b"_PYC_").decode()
+from utils import encode_config, encode_image
 
 
-def encode_image(image_path):
-    """編碼圖片為 Base64"""
-    with open(image_path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+def export_script(parent, script, template_path):
+    """導出腳本為 EXE"""
+    # 檢查 PyInstaller
+    try:
+        import PyInstaller
+    except ImportError:
+        if messagebox.askyesno(
+            "缺少 PyInstaller",
+            "導出需要 PyInstaller，是否自動安裝？\n\n"
+            "將執行: pip install pyinstaller",
+            parent=parent
+        ):
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "pyinstaller"],
+                capture_output=True
+            )
+            if result.returncode != 0:
+                messagebox.showerror("安裝失敗", "無法安裝 PyInstaller", parent=parent)
+                return
+        else:
+            return
+
+    # 開啟導出對話框
+    ExportDialog(parent, script, template_path)
 
 
 class ExportDialog:
@@ -38,7 +49,6 @@ class ExportDialog:
         self.parent = parent
         self.script = script
         self.template_path = template_path
-        self.result = None
 
         self._create_dialog()
 
@@ -46,75 +56,66 @@ class ExportDialog:
         """建立對話框"""
         self.dialog = tk.Toplevel(self.parent)
         self.dialog.title("導出 EXE")
-        self.dialog.geometry("450x350")
+        self.dialog.geometry("400x300")
         self.dialog.transient(self.parent)
         self.dialog.grab_set()
         self.dialog.resizable(False, False)
+        self.dialog.configure(bg="white")
 
         # 置中
         self.dialog.update_idletasks()
-        x = self.parent.winfo_x() + (self.parent.winfo_width() - 450) // 2
-        y = self.parent.winfo_y() + (self.parent.winfo_height() - 350) // 2
+        x = self.parent.winfo_x() + (self.parent.winfo_width() - 400) // 2
+        y = self.parent.winfo_y() + (self.parent.winfo_height() - 300) // 2
         self.dialog.geometry(f"+{x}+{y}")
 
         # 標題
         tk.Label(
             self.dialog, text="導出獨立執行檔",
-            font=("Microsoft JhengHei", 14, "bold")
+            font=("Microsoft JhengHei", 14, "bold"),
+            bg="white"
         ).pack(pady=15)
 
         # 設定區
-        settings_frame = ttk.LabelFrame(self.dialog, text="導出設定", padding=15)
-        settings_frame.pack(fill="x", padx=20, pady=10)
+        frame = tk.Frame(self.dialog, bg="white", padx=20)
+        frame.pack(fill="x")
 
         # EXE 名稱
-        row1 = ttk.Frame(settings_frame)
-        row1.pack(fill="x", pady=5)
-        ttk.Label(row1, text="程式名稱:").pack(side="left")
+        tk.Label(frame, text="程式名稱:", bg="white").grid(row=0, column=0, sticky="w", pady=8)
         self.name_var = tk.StringVar(value=self.script.name or "MyAutoClicker")
-        ttk.Entry(row1, textvariable=self.name_var, width=25).pack(side="right")
+        tk.Entry(frame, textvariable=self.name_var, width=30).grid(row=0, column=1, pady=8)
 
         # 輸出位置
-        row2 = ttk.Frame(settings_frame)
-        row2.pack(fill="x", pady=5)
-        ttk.Label(row2, text="輸出位置:").pack(side="left")
+        tk.Label(frame, text="輸出位置:", bg="white").grid(row=1, column=0, sticky="w", pady=8)
+        output_frame = tk.Frame(frame, bg="white")
+        output_frame.grid(row=1, column=1, sticky="w", pady=8)
         self.output_var = tk.StringVar(value=os.path.expanduser("~/Desktop"))
-        ttk.Entry(row2, textvariable=self.output_var, width=20).pack(side="left", padx=5)
-        ttk.Button(row2, text="瀏覽", command=self._browse_output, width=6).pack(side="left")
+        tk.Entry(output_frame, textvariable=self.output_var, width=22).pack(side="left")
+        tk.Button(output_frame, text="瀏覽", command=self._browse_output).pack(side="left", padx=5)
 
         # 選項
-        options_frame = ttk.LabelFrame(self.dialog, text="選項", padding=15)
-        options_frame.pack(fill="x", padx=20, pady=10)
-
         self.sound_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options_frame, text="啟用提示音",
-                        variable=self.sound_var).pack(anchor="w")
-
-        self.console_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(options_frame, text="顯示命令列視窗（除錯用）",
-                        variable=self.console_var).pack(anchor="w")
+        tk.Checkbutton(frame, text="啟用提示音", variable=self.sound_var, bg="white").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=5)
 
         # 進度
         self.progress_var = tk.StringVar(value="")
         self.progress_label = tk.Label(
             self.dialog, textvariable=self.progress_var,
-            fg="gray", font=("", 9)
+            fg="gray", bg="white"
         )
-        self.progress_label.pack(pady=5)
-
-        self.progress_bar = ttk.Progressbar(self.dialog, mode="indeterminate", length=300)
-        self.progress_bar.pack(pady=5)
+        self.progress_label.pack(pady=10)
 
         # 按鈕
-        btn_frame = ttk.Frame(self.dialog)
+        btn_frame = tk.Frame(self.dialog, bg="white")
         btn_frame.pack(pady=15)
 
-        self.export_btn = ttk.Button(
-            btn_frame, text="開始導出", command=self._start_export, width=12
+        self.export_btn = tk.Button(
+            btn_frame, text="開始導出", command=self._start_export,
+            width=12, bg="#4CAF50", fg="white", font=("", 10, "bold")
         )
         self.export_btn.pack(side="left", padx=10)
 
-        ttk.Button(
+        tk.Button(
             btn_frame, text="取消", command=self.dialog.destroy, width=12
         ).pack(side="left", padx=10)
 
@@ -127,7 +128,6 @@ class ExportDialog:
     def _start_export(self):
         """開始導出"""
         self.export_btn.configure(state="disabled")
-        self.progress_bar.start()
         self.progress_var.set("準備中...")
 
         # 在新執行緒中執行
@@ -142,7 +142,7 @@ class ExportDialog:
             # 準備設定
             config = {
                 "name": self.name_var.get(),
-                "scan_interval": self.script.click_interval if hasattr(self.script, 'click_interval') else 0.5,
+                "scan_interval": 0.5,
                 "threshold": 0.7,
                 "click_count": self.script.click_count,
                 "click_interval": self.script.click_interval,
@@ -176,7 +176,7 @@ class ExportDialog:
                     f.write(encrypted_config)
 
                 # 執行 PyInstaller
-                self._update_progress("打包中（這可能需要一分鐘）...")
+                self._update_progress("打包中（約需 1 分鐘）...")
 
                 exe_name = self.name_var.get().replace(" ", "_")
                 output_dir = self.output_var.get()
@@ -184,19 +184,15 @@ class ExportDialog:
                 cmd = [
                     sys.executable, "-m", "PyInstaller",
                     "--onefile",
+                    "--noconsole",
                     "--name", exe_name,
                     "--distpath", output_dir,
                     "--workpath", os.path.join(temp_dir, "build"),
                     "--specpath", temp_dir,
                     "--add-data", f"{config_path};.",
+                    runner_dst
                 ]
 
-                if not self.console_var.get():
-                    cmd.append("--noconsole")
-
-                cmd.append(runner_dst)
-
-                # 執行
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
@@ -205,15 +201,15 @@ class ExportDialog:
                 )
 
                 if result.returncode != 0:
-                    raise Exception(f"PyInstaller 失敗:\n{result.stderr}")
+                    raise Exception(f"PyInstaller 失敗:\n{result.stderr[:500]}")
 
                 # 完成
                 exe_path = os.path.join(output_dir, f"{exe_name}.exe")
-                self._update_progress(f"完成！")
+                self._update_progress("完成！")
                 self.dialog.after(0, lambda: self._show_success(exe_path))
 
             finally:
-                # 清理臨時目錄
+                # 清理
                 try:
                     shutil.rmtree(temp_dir)
                 except:
@@ -223,17 +219,16 @@ class ExportDialog:
             self.dialog.after(0, lambda: self._show_error(str(e)))
 
     def _update_progress(self, message):
-        """更新進度訊息"""
+        """更新進度"""
         self.dialog.after(0, lambda: self.progress_var.set(message))
 
     def _show_success(self, exe_path):
-        """顯示成功"""
-        self.progress_bar.stop()
+        """成功"""
         self.progress_var.set("導出成功！")
 
         if messagebox.askyesno(
             "導出成功",
-            f"EXE 已導出到:\n{exe_path}\n\n要開啟所在資料夾嗎？",
+            f"EXE 已導出到:\n{exe_path}\n\n要開啟資料夾嗎？",
             parent=self.dialog
         ):
             os.startfile(os.path.dirname(exe_path))
@@ -241,34 +236,7 @@ class ExportDialog:
         self.dialog.destroy()
 
     def _show_error(self, error):
-        """顯示錯誤"""
-        self.progress_bar.stop()
+        """失敗"""
         self.progress_var.set("導出失敗")
         self.export_btn.configure(state="normal")
         messagebox.showerror("導出失敗", error, parent=self.dialog)
-
-
-def export_script(parent, script, template_path):
-    """導出腳本為 EXE"""
-    # 檢查 PyInstaller
-    try:
-        import PyInstaller
-    except ImportError:
-        if messagebox.askyesno(
-            "缺少 PyInstaller",
-            "導出需要 PyInstaller，是否自動安裝？\n\n"
-            "將執行: pip install pyinstaller",
-            parent=parent
-        ):
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "pyinstaller"],
-                capture_output=True
-            )
-            if result.returncode != 0:
-                messagebox.showerror("安裝失敗", "無法安裝 PyInstaller", parent=parent)
-                return
-        else:
-            return
-
-    # 開啟導出對話框
-    dialog = ExportDialog(parent, script, template_path)
