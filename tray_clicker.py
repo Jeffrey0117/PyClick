@@ -22,11 +22,30 @@ import ctypes
 import os
 import json
 import winsound
+import logging
+from datetime import datetime
 
 from utils import (
     force_focus, click_no_focus, check_single_instance,
     user32, kernel32, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP
 )
+
+# ============================================================
+# 日誌設定
+# ============================================================
+log_dir = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"pyclick_{datetime.now():%Y%m%d}.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger('PyClick')
 
 
 # ============================================================
@@ -136,7 +155,7 @@ class TrayClicker:
                     self.similarity_threshold = config.get("similarity_threshold", 0.7)
                     self.click_cooldown = config.get("click_cooldown", 1.0)
             except Exception as e:
-                print(f"[PyClick] 載入設定失敗: {e}")
+                logger.warning(f"載入設定失敗: {e}")
 
     def _save_stats(self):
         """儲存統計資料和設定"""
@@ -155,7 +174,7 @@ class TrayClicker:
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"[PyClick] 儲存設定失敗: {e}")
+            logger.warning(f"儲存設定失敗: {e}")
 
     def setup_gui(self):
         """建立主面板"""
@@ -1513,7 +1532,7 @@ class TrayClicker:
 
             except Exception as e:
                 # 記錄錯誤但不中斷
-                print(f"[PyClick] 自動模式錯誤: {e}")
+                logger.error(f"自動模式錯誤: {e}")
                 time.sleep(auto_interval)
 
     def on_hotkey(self):
@@ -1557,7 +1576,7 @@ class TrayClicker:
             self._execute_action_sequence(cx, cy)
 
         except Exception as e:
-            print(f"[PyClick] 熱鍵點擊錯誤: {e}")
+            logger.error(f"熱鍵點擊錯誤: {e}")
 
     def quit_app(self, icon=None, item=None):
         """結束"""
@@ -1591,5 +1610,13 @@ if __name__ == "__main__":
         messagebox.showwarning("PyClick", "PyClick 已在運行中！\n請查看系統托盤。")
         root.destroy()
     else:
-        app = TrayClicker()
-        app.run()
+        logger.info("=" * 50)
+        logger.info("PyClick 啟動")
+        logger.info(f"日誌檔案: {log_file}")
+        try:
+            app = TrayClicker()
+            app.run()
+        except Exception as e:
+            logger.critical(f"程式異常終止: {e}", exc_info=True)
+        finally:
+            logger.info("PyClick 結束")
