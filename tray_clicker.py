@@ -113,6 +113,7 @@ pyautogui.FAILSAFE = True
 class TrayClicker:
     def __init__(self):
         self.templates = []  # 多模板支援（任一匹配即觸發）
+        self.templates_gray = []  # 灰階版本（效能優化）
         self.hotkey = 'F6'
         self.running = True
 
@@ -173,10 +174,13 @@ class TrayClicker:
         """向後相容：設定單一模板"""
         if value is None:
             self.templates = []
+            self.templates_gray = []
         elif not self.templates:
             self.templates = [value]
+            self.templates_gray = [cv2.cvtColor(value, cv2.COLOR_BGR2GRAY)]
         else:
             self.templates[0] = value
+            self.templates_gray[0] = cv2.cvtColor(value, cv2.COLOR_BGR2GRAY)
 
     def _load_stats(self):
         """載入統計資料和設定"""
@@ -688,14 +692,17 @@ class TrayClicker:
     def _load_template_from_script(self):
         """從腳本載入模板圖片（多模板支援）"""
         new_templates = []
+        new_templates_gray = []
         for path in self.current_script.template_paths:
             if path and os.path.exists(path):
                 img = cv2.imread(path)
                 if img is not None:
                     new_templates.append(img)
+                    new_templates_gray.append(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
 
         with self._lock:
             self.templates = new_templates
+            self.templates_gray = new_templates_gray
 
     def save_script(self):
         """儲存當前腳本"""
@@ -948,6 +955,7 @@ class TrayClicker:
         if new_template is not None:
             with self._lock:
                 self.templates.append(new_template)
+                self.templates_gray.append(cv2.cvtColor(new_template, cv2.COLOR_BGR2GRAY))
 
             # 更新腳本路徑列表
             self.current_script.template_paths.append(filepath)
@@ -985,6 +993,7 @@ class TrayClicker:
         """清除所有模板"""
         with self._lock:
             self.templates = []
+            self.templates_gray = []
             self._last_match_pos = None
             self._roi_miss_count = 0
 
@@ -1304,9 +1313,10 @@ class TrayClicker:
         template_path = os.path.join(template_dir, template_filename)
         cv2.imwrite(template_path, new_template)
 
-        # 新增到模板列表（多模板支援）
+        # 新增到模板列表（多模板支援 + 灰階版本）
         with self._lock:
             self.templates.append(new_template)
+            self.templates_gray.append(cv2.cvtColor(new_template, cv2.COLOR_BGR2GRAY))
             self.last_screen_hash = None
 
         # 更新當前腳本的模板路徑列表
@@ -1515,13 +1525,13 @@ class TrayClicker:
         self.increment_click_count(click_count)
 
     def _auto_loop(self):
-        """自動偵測（不搶焦點）- 多模板支援 + 短路優化"""
+        """自動偵測（不搶焦點）- 灰階匹配 + 動態間隔 + 短路優化"""
         while self.running:
-            # 執行緒安全：讀取共享狀態
+            # 執行緒安全：讀取共享狀態（不複製模板，只讀參考）
             with self._lock:
                 current_mode = self.mode
-                # 複製所有模板（多模板支援）
-                templates = [t.copy() for t in self.templates] if self.templates else []
+                templates = self.templates  # 只讀，不需複製
+                templates_gray = self.templates_gray  # 灰階版本
                 auto_interval = self.auto_interval
                 continuous_click = self.continuous_click
                 last_match_pos = self._last_match_pos
@@ -1530,7 +1540,7 @@ class TrayClicker:
             if current_mode != "auto":
                 break
 
-            if not templates:
+            if not templates or not templates_gray:
                 time.sleep(auto_interval)
                 continue
 
@@ -1552,15 +1562,18 @@ class TrayClicker:
                         continue
                     self.last_screen_hash = screen_hash
 
+                # 轉灰階一次，供所有模板使用
+                screen_gray = cv2.cvtColor(screen_bgr, cv2.COLOR_BGR2GRAY)
+
                 # 多模板遍歷（短路優化：找到就停）
                 found = False
-                for template in templates:
-                    th, tw = template.shape[:2]
+                for i, template_gray in enumerate(templates_gray):
+                    th, tw = template_gray.shape[:2]
                     max_val = 0
                     max_loc = None
                     roi_offset = (0, 0)
 
-                    # ROI 優化：先在上次位置附近搜尋
+                    # ROI 優化：先在上次位置附近搜尋（灰階）
                     if last_match_pos and self._roi_miss_count < self._roi_max_miss:
                         lx, ly = last_match_pos
                         roi_x1 = max(0, lx - ox - self._roi_margin)
@@ -1569,14 +1582,14 @@ class TrayClicker:
                         roi_y2 = min(screen_h, ly - oy + th + self._roi_margin)
 
                         if roi_x2 - roi_x1 >= tw and roi_y2 - roi_y1 >= th:
-                            roi = screen_bgr[roi_y1:roi_y2, roi_x1:roi_x2]
-                            result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+                            roi = screen_gray[roi_y1:roi_y2, roi_x1:roi_x2]
+                            result = cv2.matchTemplate(roi, template_gray, cv2.TM_CCOEFF_NORMED)
                             _, max_val, _, max_loc = cv2.minMaxLoc(result)
                             roi_offset = (roi_x1, roi_y1)
 
-                    # ROI 沒找到，全螢幕搜尋
+                    # ROI 沒找到，全螢幕搜尋（灰階）
                     if max_val < threshold:
-                        result = cv2.matchTemplate(screen_bgr, template, cv2.TM_CCOEFF_NORMED)
+                        result = cv2.matchTemplate(screen_gray, template_gray, cv2.TM_CCOEFF_NORMED)
                         _, max_val, _, max_loc = cv2.minMaxLoc(result)
                         roi_offset = (0, 0)
 
@@ -1612,9 +1625,11 @@ class TrayClicker:
                     self._roi_miss_count += 1
 
                 # 釋放大型陣列
-                del screen_bgr, screen
+                del screen_bgr, screen, screen_gray
 
-                time.sleep(auto_interval)
+                # 動態間隔：找到時快速掃描，沒找到時放慢
+                sleep_time = auto_interval * 0.5 if found else auto_interval * 1.2
+                time.sleep(sleep_time)
 
             except Exception as e:
                 # 記錄錯誤但不中斷
@@ -1632,29 +1647,29 @@ class TrayClicker:
         threading.Thread(target=self.find_and_click, daemon=True).start()
 
     def find_and_click(self):
-        """手動找圖點擊 - 多模板支援"""
-        # 執行緒安全：複製所有 template 和設定
+        """手動找圖點擊 - 灰階匹配 + 短路優化"""
+        # 執行緒安全：取得參考（不複製）
         with self._lock:
-            templates = [t.copy() for t in self.templates] if self.templates else []
+            templates_gray = self.templates_gray  # 只讀，不需複製
             threshold = self.similarity_threshold
 
-        if not templates:
+        if not templates_gray:
             return
 
         try:
             with mss.mss() as sct:
                 monitor = sct.monitors[0]
                 screen = np.array(sct.grab(monitor))
-                screen = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
+                screen_gray = cv2.cvtColor(screen, cv2.COLOR_BGRA2GRAY)
                 ox, oy = monitor["left"], monitor["top"]
 
-            # 多模板遍歷（短路優化）
-            for template in templates:
-                result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
+            # 多模板遍歷（灰階 + 短路優化）
+            for template_gray in templates_gray:
+                result = cv2.matchTemplate(screen_gray, template_gray, cv2.TM_CCOEFF_NORMED)
                 _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
                 if max_val >= threshold:
-                    th, tw = template.shape[:2]
+                    th, tw = template_gray.shape[:2]
                     cx = max_loc[0] + tw // 2 + ox
                     cy = max_loc[1] + th // 2 + oy
 
