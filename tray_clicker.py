@@ -83,6 +83,10 @@ class SimpleScript:
         self.click_count = 1         # 點擊次數
         self.click_interval = 0.1    # 點擊間隔（秒）
         self.after_key = ""          # 點完後按的鍵（空=不按）
+        # 新增：掃描設定
+        self.auto_interval = 0.5     # 掃描間隔（秒）
+        self.threshold = 0.7         # 相似度門檻
+        self.sound_enabled = True    # 提示音
 
     @property
     def template_path(self):
@@ -105,6 +109,10 @@ class SimpleScript:
             "click_count": self.click_count,
             "click_interval": self.click_interval,
             "after_key": self.after_key,
+            # 新增：掃描設定
+            "auto_interval": self.auto_interval,
+            "threshold": self.threshold,
+            "sound_enabled": self.sound_enabled,
         }
 
     @classmethod
@@ -118,6 +126,10 @@ class SimpleScript:
         script.click_count = data.get("click_count", 1)
         script.click_interval = data.get("click_interval", 0.1)
         script.after_key = data.get("after_key", "")
+        # 新增：掃描設定（向後相容：舊腳本沒有這些欄位則用預設值）
+        script.auto_interval = data.get("auto_interval", 0.5)
+        script.threshold = data.get("threshold", 0.7)
+        script.sound_enabled = data.get("sound_enabled", True)
         return script
 
     def save(self, filepath):
@@ -705,6 +717,15 @@ class TrayClicker:
         self.click_interval_var.set(str(self.current_script.click_interval))
         self.after_key_var.set(self.current_script.after_key)
 
+        # 載入掃描設定
+        self.auto_interval = self.current_script.auto_interval
+        self.similarity_threshold = self.current_script.threshold
+        self.sound_enabled = self.current_script.sound_enabled
+
+        # 更新 UI 控制項
+        self.interval_var.set(str(self.auto_interval))
+        self.sound_var.set(self.sound_enabled)
+
         # 更新模板資訊（多模板支援）
         count = len(self.templates)
         if count == 0:
@@ -733,12 +754,19 @@ class TrayClicker:
             self.templates = new_templates
             self.templates_gray = new_templates_gray
 
+    def _sync_settings_to_script(self):
+        """同步 TrayClicker 設定到腳本（儲存前呼叫）"""
+        self.current_script.auto_interval = self.auto_interval
+        self.current_script.threshold = self.similarity_threshold
+        self.current_script.sound_enabled = self.sound_enabled
+
     def save_script(self):
         """儲存當前腳本"""
         if not self.current_script.name or self.current_script.name == "未命名":
             self.save_script_as()
             return
 
+        self._sync_settings_to_script()  # 同步設定
         filepath = os.path.join(self.scripts_dir, f"{self.current_script.name}.json")
         self.current_script.save(filepath)
         self._refresh_script_list()
@@ -752,6 +780,7 @@ class TrayClicker:
         if not name:
             return
 
+        self._sync_settings_to_script()  # 同步設定
         self.current_script.name = name
         filepath = os.path.join(self.scripts_dir, f"{name}.json")
         self.current_script.save(filepath)

@@ -114,6 +114,7 @@ def force_focus(hwnd):
 class LiteRunner:
     """精簡版執行引擎"""
 
+
     def __init__(self):
         self.config = None
         self.template = None
@@ -227,13 +228,19 @@ class LiteRunner:
     def show_settings(self, icon=None, item=None):
         """顯示設定視窗"""
         if self.root and self.root.winfo_exists():
+            self.root.deiconify()
             self.root.lift()
+            self.root.focus_force()
             return
 
         self.root = tk.Tk()
         self.root.title(f"{self.script_name} 設定")
-        self.root.geometry("350x400")
-        self.root.resizable(False, False)
+        self.root.geometry("350x580")
+        self.root.resizable(True, True)
+        self.root.minsize(300, 550)
+
+        # 關閉視窗時縮到托盤而非結束程式
+        self.root.protocol("WM_DELETE_WINDOW", self._hide_to_tray)
 
         # 標題
         tk.Label(
@@ -295,25 +302,25 @@ class LiteRunner:
         )
         self.status_label.pack(side="right")
 
-        # 開始/停止按鈕（美化版）
+        # 開始/停止按鈕
         control_btn_frame = ttk.Frame(control_frame)
         control_btn_frame.pack(fill="x", pady=10)
 
         self.start_btn = tk.Button(
             control_btn_frame, text="▶ 開始",
-            command=self._start_from_ui, width=12,
-            bg="#2E7D32", fg="white", activebackground="#1B5E20", activeforeground="white",
-            font=("Microsoft JhengHei", 10, "bold"), relief="flat", bd=0, cursor="hand2"
+            command=self._start_from_ui, width=10,
+            bg="#4CAF50", fg="white", activebackground="#388E3C", activeforeground="white",
+            font=("Microsoft JhengHei", 10, "bold"), cursor="hand2"
         )
-        self.start_btn.pack(side="left", padx=10, expand=True, ipady=5)
+        self.start_btn.pack(side="left", padx=10, expand=True, ipady=8)
 
         self.stop_btn = tk.Button(
             control_btn_frame, text="■ 停止",
-            command=self._stop_from_ui, width=12,
-            bg="#C62828", fg="white", activebackground="#B71C1C", activeforeground="white",
-            font=("Microsoft JhengHei", 10, "bold"), relief="flat", bd=0, cursor="hand2"
+            command=self._stop_from_ui, width=10,
+            bg="#f44336", fg="white", activebackground="#d32f2f", activeforeground="white",
+            font=("Microsoft JhengHei", 10, "bold"), cursor="hand2"
         )
-        self.stop_btn.pack(side="left", padx=10, expand=True, ipady=5)
+        self.stop_btn.pack(side="left", padx=10, expand=True, ipady=8)
 
         self._update_control_buttons()
 
@@ -333,13 +340,27 @@ class LiteRunner:
 
         ttk.Button(btn_frame, text="套用設定", command=self._apply_settings,
                    width=10).pack(side="left", padx=10)
-        ttk.Button(btn_frame, text="關閉", command=self.root.destroy,
+        ttk.Button(btn_frame, text="縮到托盤", command=self._hide_to_tray,
                    width=10).pack(side="left", padx=10)
+
+        # 使用提示
+        tip_label = tk.Label(
+            self.root,
+            text="💡 按「開始」執行自動偵測，關閉視窗後可從托盤圖示重新開啟",
+            font=("Microsoft JhengHei", 9),
+            fg="#666666"
+        )
+        tip_label.pack(pady=(0, 10))
 
         # 啟動統計更新（面板開啟時持續更新）
         self._start_stats_update()
 
         self.root.mainloop()
+
+    def _hide_to_tray(self):
+        """縮小到托盤"""
+        if self.root:
+            self.root.withdraw()
 
     def _apply_settings(self):
         """套用設定"""
@@ -354,11 +375,11 @@ class LiteRunner:
     def _update_control_buttons(self):
         """更新控制按鈕狀態"""
         if self.mode == "auto":
-            self.start_btn.config(state="disabled", bg="#81C784")
-            self.stop_btn.config(state="normal", bg="#C62828")
+            self.start_btn.config(state="disabled", bg="#A5D6A7")
+            self.stop_btn.config(state="normal", bg="#f44336")
             self.status_label.config(text="執行中", fg="#2E7D32")
         else:
-            self.start_btn.config(state="normal", bg="#2E7D32")
+            self.start_btn.config(state="normal", bg="#4CAF50")
             self.stop_btn.config(state="disabled", bg="#FFCDD2")
             self.status_label.config(text="已停止", fg="#C62828")
 
@@ -473,7 +494,14 @@ class LiteRunner:
             return
 
         self.setup_tray()
-        self.icon.run()
+
+        # 首次啟動：先顯示設定面板
+        # 托盤圖示在背景執行
+        tray_thread = threading.Thread(target=self.icon.run, daemon=True)
+        tray_thread.start()
+
+        # 顯示設定面板（主執行緒）
+        self.show_settings()
 
 
 # ============================================================
