@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="doc/logo.png" width="120" alt="PyClick Logo">
-</p>
-
 <h1 align="center">PyClick</h1>
 
 <p align="center">

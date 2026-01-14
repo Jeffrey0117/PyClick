@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+env/
+venv/
+.venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Logs
+logs/
+*.log
+
+# Config (user-specific)
+config.json
+
+# Claude temp files
+tmpclaude-*
+
+# Windows
+nul
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
