@@ -90,6 +90,7 @@ class SimpleScript:
         self.click_count = 1         # 點擊次數
         self.click_interval = 0.1    # 點擊間隔（秒）
         self.after_key = ""          # 點完後按的鍵（空=不按）
+        self.after_key_count = 1     # 按鍵次數
         # 新增：掃描設定
         self.auto_interval = 0.5     # 掃描間隔（秒）
         self.threshold = 0.7         # 相似度門檻
@@ -116,6 +117,7 @@ class SimpleScript:
             "click_count": self.click_count,
             "click_interval": self.click_interval,
             "after_key": self.after_key,
+            "after_key_count": self.after_key_count,
             # 新增：掃描設定
             "auto_interval": self.auto_interval,
             "threshold": self.threshold,
@@ -133,6 +135,7 @@ class SimpleScript:
         script.click_count = data.get("click_count", 1)
         script.click_interval = data.get("click_interval", 0.1)
         script.after_key = data.get("after_key", "")
+        script.after_key_count = data.get("after_key_count", 1)
         # 新增：掃描設定（向後相容：舊腳本沒有這些欄位則用預設值）
         script.auto_interval = data.get("auto_interval", 0.5)
         script.threshold = data.get("threshold", 0.7)
@@ -356,6 +359,15 @@ class TrayClicker:
         after_key_combo.pack(side="left", padx=2)
         after_key_combo.bind("<<ComboboxSelected>>", self.on_action_change)
         after_key_combo.bind("<FocusOut>", self.on_action_change)
+
+        # 按鍵次數
+        self.after_key_count_var = tk.StringVar(value="1")
+        after_key_count_combo = ttk.Combobox(row2, textvariable=self.after_key_count_var, width=4,
+                                             values=["1", "2", "3", "4", "5", "10"])
+        after_key_count_combo.pack(side="left", padx=2)
+        after_key_count_combo.bind("<<ComboboxSelected>>", self.on_action_change)
+        after_key_count_combo.bind("<FocusOut>", self.on_action_change)
+        ttk.Label(row2, text="次").pack(side="left", padx=(2, 10))
 
         ttk.Button(row2, text="縮小到托盤", command=self.hide_to_tray).pack(side="right", padx=10)
 
@@ -673,9 +685,17 @@ class TrayClicker:
 
         self.current_script.after_key = self.after_key_var.get()
 
+        try:
+            self.current_script.after_key_count = int(self.after_key_count_var.get())
+        except ValueError:
+            self.current_script.after_key_count = 1
+
         action_desc = f"點{self.current_script.click_count}下"
         if self.current_script.after_key:
-            action_desc += f" → {self.current_script.after_key}"
+            if self.current_script.after_key_count > 1:
+                action_desc += f" → {self.current_script.after_key} x{self.current_script.after_key_count}"
+            else:
+                action_desc += f" → {self.current_script.after_key}"
 
         # 提示用戶儲存
         if self.current_script.name and self.current_script.name != "未命名":
@@ -741,6 +761,7 @@ class TrayClicker:
         self.click_count_var.set(str(self.current_script.click_count))
         self.click_interval_var.set(str(self.current_script.click_interval))
         self.after_key_var.set(self.current_script.after_key)
+        self.after_key_count_var.set(str(self.current_script.after_key_count))
 
         # 載入掃描設定
         self.auto_interval = self.current_script.auto_interval
@@ -1731,8 +1752,11 @@ class TrayClicker:
             # 執行後續按鍵（在目標視窗按）
             if after_key:
                 time.sleep(0.1)
-                pyautogui.press(after_key.lower())
-                time.sleep(0.05)
+                after_key_count = self.current_script.after_key_count
+                for i in range(after_key_count):
+                    pyautogui.press(after_key.lower())
+                    if i < after_key_count - 1:
+                        time.sleep(0.05)
 
         finally:
             # 保證解鎖（即使出錯也會執行）
