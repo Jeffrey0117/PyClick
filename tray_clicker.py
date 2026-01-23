@@ -926,9 +926,13 @@ class TrayClicker:
 
         ttk.Label(template_frame, text="已儲存的模板", font=("", 12, "bold")).pack(anchor="w", pady=(0, 10))
 
-        # 模板列表
-        list_frame = ttk.Frame(template_frame)
-        list_frame.pack(fill="both", expand=True)
+        # 模板列表和預覽
+        list_container = ttk.Frame(template_frame)
+        list_container.pack(fill="both", expand=True)
+
+        # 左側：列表
+        list_frame = ttk.Frame(list_container)
+        list_frame.pack(side="left", fill="both", expand=True)
 
         self.template_listbox = tk.Listbox(list_frame, height=10, font=("", 10))
         self.template_listbox.pack(side="left", fill="both", expand=True)
@@ -936,6 +940,17 @@ class TrayClicker:
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.template_listbox.yview)
         scrollbar.pack(side="right", fill="y")
         self.template_listbox.config(yscrollcommand=scrollbar.set)
+
+        # 右側：預覽圖
+        preview_frame = ttk.LabelFrame(list_container, text="預覽", padding=10)
+        preview_frame.pack(side="right", fill="both", padx=(10, 0))
+
+        self.template_preview_label = ttk.Label(preview_frame, text="選擇模板以預覽",
+                                                foreground="gray", anchor="center")
+        self.template_preview_label.pack(expand=True)
+
+        # 綁定選擇事件
+        self.template_listbox.bind("<<ListboxSelect>>", self._on_template_select)
 
         # 載入已儲存的模板
         self._load_template_list()
@@ -1122,6 +1137,42 @@ class TrayClicker:
         for f in os.listdir(template_dir):
             if f.endswith(".png"):
                 self.template_listbox.insert(tk.END, f[:-4])
+
+    def _on_template_select(self, event=None):
+        """當選擇模板時顯示預覽圖"""
+        import os
+        selection = self.template_listbox.curselection()
+        if not selection:
+            return
+
+        name = self.template_listbox.get(selection[0])
+        template_dir = os.path.join(os.path.dirname(__file__), "templates")
+        filepath = os.path.join(template_dir, f"{name}.png")
+
+        if not os.path.exists(filepath):
+            self.template_preview_label.config(image='', text="檔案不存在", foreground="red")
+            return
+
+        # 讀取圖片
+        img = cv2.imread(filepath)
+        if img is None:
+            self.template_preview_label.config(image='', text="無法載入圖片", foreground="red")
+            return
+
+        # 轉換顏色並縮放
+        h, w = img.shape[:2]
+        max_size = 200
+        scale = min(max_size/w, max_size/h, 1.0)
+        new_w, new_h = int(w * scale), int(h * scale)
+        img_resized = cv2.resize(img, (new_w, new_h))
+        img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+
+        # 轉為 PhotoImage
+        photo = ImageTk.PhotoImage(Image.fromarray(img_rgb))
+
+        # 保存引用（防止被垃圾回收）
+        self.template_preview_label._photo = photo
+        self.template_preview_label.config(image=photo, text="")
 
     def _save_current_template(self):
         """儲存當前模板"""
