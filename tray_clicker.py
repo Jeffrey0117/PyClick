@@ -91,6 +91,10 @@ class SimpleScript:
         self.click_interval = 0.1    # 點擊間隔（秒）
         self.after_key = ""          # 點完後按的鍵（空=不按）
         self.after_key_count = 1     # 按鍵次數
+        # 確認機制：點擊後確認圖片是否還在
+        self.verify_still_there = False  # 是否啟用確認機制
+        self.verify_delay = 0.5          # 確認延遲（秒）
+        self.verify_key = "enter"        # 如果還在的話按什麼鍵
         # 新增：掃描設定
         self.auto_interval = 0.5     # 掃描間隔（秒）
         self.threshold = 0.7         # 相似度門檻
@@ -118,6 +122,10 @@ class SimpleScript:
             "click_interval": self.click_interval,
             "after_key": self.after_key,
             "after_key_count": self.after_key_count,
+            # 確認機制
+            "verify_still_there": self.verify_still_there,
+            "verify_delay": self.verify_delay,
+            "verify_key": self.verify_key,
             # 新增：掃描設定
             "auto_interval": self.auto_interval,
             "threshold": self.threshold,
@@ -136,6 +144,10 @@ class SimpleScript:
         script.click_interval = data.get("click_interval", 0.1)
         script.after_key = data.get("after_key", "")
         script.after_key_count = data.get("after_key_count", 1)
+        # 確認機制（向後相容）
+        script.verify_still_there = data.get("verify_still_there", False)
+        script.verify_delay = data.get("verify_delay", 0.5)
+        script.verify_key = data.get("verify_key", "enter")
         # 新增：掃描設定（向後相容：舊腳本沒有這些欄位則用預設值）
         script.auto_interval = data.get("auto_interval", 0.5)
         script.threshold = data.get("threshold", 0.7)
@@ -182,6 +194,9 @@ class TrayClicker:
         # 點擊偏移（防偵測）
         self.click_offset_enabled = False  # 是否啟用隨機偏移
         self.click_offset_range = 5        # 偏移範圍（像素）
+
+        # 彩色匹配（預設開啟，關閉則用灰階匹配）
+        self.use_color_match = True
 
         # 設定檔路徑
         self.config_path = os.path.join(os.path.dirname(__file__), "config.json")
@@ -251,6 +266,7 @@ class TrayClicker:
                     self.auto_stop_minutes = config.get("auto_stop_minutes", 30)
                     self.click_offset_enabled = config.get("click_offset_enabled", False)
                     self.click_offset_range = config.get("click_offset_range", 5)
+                    self.use_color_match = config.get("use_color_match", True)
             except Exception as e:
                 logger.warning(f"載入設定失敗: {e}")
 
@@ -271,6 +287,7 @@ class TrayClicker:
             config["auto_stop_minutes"] = self.auto_stop_minutes
             config["click_offset_enabled"] = self.click_offset_enabled
             config["click_offset_range"] = self.click_offset_range
+            config["use_color_match"] = self.use_color_match
             config["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
             with open(self.config_path, "w", encoding="utf-8") as f:
@@ -370,6 +387,30 @@ class TrayClicker:
         ttk.Label(row2, text="次").pack(side="left", padx=(2, 10))
 
         ttk.Button(row2, text="縮小到托盤", command=self.hide_to_tray).pack(side="right", padx=10)
+
+        # 第 2.5 排：確認機制
+        row2b = ttk.Frame(ctrl_frame)
+        row2b.pack(fill="x", padx=10, pady=2)
+
+        self.verify_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row2b, text="確認機制:", variable=self.verify_var,
+                        command=self.on_action_change).pack(side="left", padx=5)
+
+        ttk.Label(row2b, text="等").pack(side="left", padx=2)
+        self.verify_delay_var = tk.StringVar(value="0.5")
+        verify_delay_combo = ttk.Combobox(row2b, textvariable=self.verify_delay_var, width=5,
+                                           values=["0.3", "0.5", "0.8", "1.0", "1.5", "2.0"])
+        verify_delay_combo.pack(side="left", padx=2)
+        verify_delay_combo.bind("<<ComboboxSelected>>", self.on_action_change)
+        verify_delay_combo.bind("<FocusOut>", self.on_action_change)
+        ttk.Label(row2b, text="秒後，若圖片還在則按").pack(side="left", padx=2)
+
+        self.verify_key_var = tk.StringVar(value="Enter")
+        verify_key_combo = ttk.Combobox(row2b, textvariable=self.verify_key_var, width=8,
+                                         values=["Enter", "Tab", "Space", "Escape", "Up", "Down", "Left", "Right"])
+        verify_key_combo.pack(side="left", padx=2)
+        verify_key_combo.bind("<<ComboboxSelected>>", self.on_action_change)
+        verify_key_combo.bind("<FocusOut>", self.on_action_change)
 
         # 第三排：模式控制
         row3 = ttk.Frame(ctrl_frame)
@@ -690,12 +731,22 @@ class TrayClicker:
         except ValueError:
             self.current_script.after_key_count = 1
 
+        # 確認機制設定
+        self.current_script.verify_still_there = self.verify_var.get()
+        try:
+            self.current_script.verify_delay = float(self.verify_delay_var.get())
+        except ValueError:
+            self.current_script.verify_delay = 0.5
+        self.current_script.verify_key = self.verify_key_var.get()
+
         action_desc = f"點{self.current_script.click_count}下"
         if self.current_script.after_key:
             if self.current_script.after_key_count > 1:
                 action_desc += f" → {self.current_script.after_key} x{self.current_script.after_key_count}"
             else:
                 action_desc += f" → {self.current_script.after_key}"
+        if self.current_script.verify_still_there:
+            action_desc += f" → 確認({self.current_script.verify_delay}s後按{self.current_script.verify_key})"
 
         # 提示用戶儲存
         if self.current_script.name and self.current_script.name != "未命名":
@@ -762,6 +813,11 @@ class TrayClicker:
         self.click_interval_var.set(str(self.current_script.click_interval))
         self.after_key_var.set(self.current_script.after_key)
         self.after_key_count_var.set(str(self.current_script.after_key_count))
+
+        # 載入確認機制設定
+        self.verify_var.set(self.current_script.verify_still_there)
+        self.verify_delay_var.set(str(self.current_script.verify_delay))
+        self.verify_key_var.set(self.current_script.verify_key or "Enter")
 
         # 載入掃描設定
         self.auto_interval = self.current_script.auto_interval
@@ -1064,6 +1120,13 @@ class TrayClicker:
         offset_combo.pack(side="left", padx=5)
         ttk.Label(offset_frame, text="像素 (防偵測)").pack(side="left")
 
+        # 彩色匹配
+        color_frame = ttk.Frame(config_frame)
+        color_frame.pack(fill="x", pady=8)
+        color_var = tk.BooleanVar(value=self.use_color_match)
+        ttk.Checkbutton(color_frame, text="彩色匹配", variable=color_var).pack(side="left")
+        ttk.Label(color_frame, text="(關閉=灰階匹配，較快但可能誤判顏色)", foreground="gray", font=("", 8)).pack(side="left", padx=10)
+
         ttk.Separator(config_frame, orient="horizontal").pack(fill="x", pady=20)
 
         # 儲存按鈕
@@ -1076,10 +1139,12 @@ class TrayClicker:
                 self.auto_stop_minutes = int(timer_minutes_var.get())
                 self.click_offset_enabled = offset_var.get()
                 self.click_offset_range = int(offset_range_var.get())
+                self.use_color_match = color_var.get()
                 self._save_stats()
                 timer_msg = f"，定時 {self.auto_stop_minutes}分" if self.auto_stop_enabled else ""
                 offset_msg = f"，偏移 ±{self.click_offset_range}px" if self.click_offset_enabled else ""
-                self.status_var.set(f"設定已儲存：閾值 {self.similarity_threshold:.0%}{timer_msg}{offset_msg}")
+                color_msg = "，彩色匹配" if self.use_color_match else "，灰階匹配"
+                self.status_var.set(f"設定已儲存：閾值 {self.similarity_threshold:.0%}{timer_msg}{offset_msg}{color_msg}")
                 settings_win.destroy()
             except ValueError:
                 self.status_var.set("設定值無效")
@@ -1823,14 +1888,73 @@ class TrayClicker:
         # 更新計數
         self.increment_click_count(click_count)
 
+        # 確認機制：等待後檢查圖片是否還在，若在則按鍵
+        if self.current_script.verify_still_there:
+            self._verify_and_press()
+
+    def _verify_and_press(self):
+        """確認機制：等待後檢查圖片是否還在，若在則按鍵"""
+        verify_delay = self.current_script.verify_delay
+        verify_key = self.current_script.verify_key
+
+        # 等待指定時間
+        time.sleep(verify_delay)
+
+        # 取得當前模板和設定
+        with self._lock:
+            templates = self.templates
+            templates_gray = self.templates_gray
+            use_color = self.use_color_match
+            threshold = self.similarity_threshold
+
+        if not templates:
+            return
+
+        try:
+            # 截取螢幕
+            with mss.mss() as sct:
+                monitor = sct.monitors[0]
+                screen = np.array(sct.grab(monitor))
+
+            # 根據設定選擇匹配模式
+            if use_color:
+                screen_match = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
+                match_templates = templates
+            else:
+                screen_match = cv2.cvtColor(screen, cv2.COLOR_BGRA2GRAY)
+                match_templates = templates_gray
+
+            # 檢查是否還能找到任一模板
+            still_there = False
+            for template in match_templates:
+                result = cv2.matchTemplate(screen_match, template, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(result)
+                if max_val >= threshold:
+                    still_there = True
+                    break
+
+            # 如果圖片還在，按下確認鍵
+            if still_there and verify_key:
+                logger.info(f"確認機制: 圖片仍在，按下 {verify_key}")
+                pyautogui.press(verify_key.lower())
+                # 播放不同的提示音（較低音）
+                if self.sound_enabled:
+                    threading.Thread(target=lambda: winsound.Beep(800, 80), daemon=True).start()
+            else:
+                logger.info("確認機制: 圖片已消失，不按鍵")
+
+        except Exception as e:
+            logger.error(f"確認機制錯誤: {e}")
+
     def _auto_loop(self):
-        """自動偵測（不搶焦點）- 灰階匹配 + 動態間隔 + 短路優化"""
+        """自動偵測（不搶焦點）- 動態間隔 + 短路優化"""
         while self.running:
             # 執行緒安全：讀取共享狀態（不複製模板，只讀參考）
             with self._lock:
                 current_mode = self.mode
                 templates = self.templates  # 只讀，不需複製
                 templates_gray = self.templates_gray  # 灰階版本
+                use_color = self.use_color_match  # 彩色匹配開關
                 auto_interval = self.auto_interval
                 continuous_click = self.continuous_click
                 last_match_pos = self._last_match_pos
@@ -1847,7 +1971,7 @@ class TrayClicker:
                     self._auto_stop_triggered()
                     break
 
-            if not templates or not templates_gray:
+            if not templates:
                 time.sleep(auto_interval)
                 continue
 
@@ -1869,18 +1993,29 @@ class TrayClicker:
                         continue
                     self.last_screen_hash = screen_hash
 
-                # 轉灰階一次，供所有模板使用
-                screen_gray = cv2.cvtColor(screen_bgr, cv2.COLOR_BGR2GRAY)
+                # 根據設定選擇匹配模式
+                if use_color:
+                    # 彩色匹配：更精準，能區分顏色
+                    screen_match = screen_bgr
+                    match_templates = templates
+                else:
+                    # 灰階匹配：較快但可能誤判顏色
+                    screen_match = cv2.cvtColor(screen_bgr, cv2.COLOR_BGR2GRAY)
+                    match_templates = templates_gray
 
                 # 多模板遍歷（短路優化：找到就停）
                 found = False
-                for i, template_gray in enumerate(templates_gray):
-                    th, tw = template_gray.shape[:2]
+                for i, template in enumerate(match_templates):
+                    # 彩色模板需要轉換，灰階模板直接用
+                    if use_color:
+                        th, tw = template.shape[:2]
+                    else:
+                        th, tw = template.shape[:2]
                     max_val = 0
                     max_loc = None
                     roi_offset = (0, 0)
 
-                    # ROI 優化：先在上次位置附近搜尋（灰階）
+                    # ROI 優化：先在上次位置附近搜尋
                     if last_match_pos and self._roi_miss_count < self._roi_max_miss:
                         lx, ly = last_match_pos
                         roi_x1 = max(0, lx - ox - self._roi_margin)
@@ -1889,14 +2024,14 @@ class TrayClicker:
                         roi_y2 = min(screen_h, ly - oy + th + self._roi_margin)
 
                         if roi_x2 - roi_x1 >= tw and roi_y2 - roi_y1 >= th:
-                            roi = screen_gray[roi_y1:roi_y2, roi_x1:roi_x2]
-                            result = cv2.matchTemplate(roi, template_gray, cv2.TM_CCOEFF_NORMED)
+                            roi = screen_match[roi_y1:roi_y2, roi_x1:roi_x2]
+                            result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
                             _, max_val, _, max_loc = cv2.minMaxLoc(result)
                             roi_offset = (roi_x1, roi_y1)
 
-                    # ROI 沒找到，全螢幕搜尋（灰階）
+                    # ROI 沒找到，全螢幕搜尋
                     if max_val < threshold:
-                        result = cv2.matchTemplate(screen_gray, template_gray, cv2.TM_CCOEFF_NORMED)
+                        result = cv2.matchTemplate(screen_match, template, cv2.TM_CCOEFF_NORMED)
                         _, max_val, _, max_loc = cv2.minMaxLoc(result)
                         roi_offset = (0, 0)
 
@@ -1932,7 +2067,7 @@ class TrayClicker:
                     self._roi_miss_count += 1
 
                 # 釋放大型陣列
-                del screen_bgr, screen, screen_gray
+                del screen_bgr, screen, screen_match
 
                 # 動態間隔：找到時快速掃描，沒找到時放慢
                 sleep_time = auto_interval * 0.5 if found else auto_interval * 1.2
@@ -1954,29 +2089,38 @@ class TrayClicker:
         threading.Thread(target=self.find_and_click, daemon=True).start()
 
     def find_and_click(self):
-        """手動找圖點擊 - 灰階匹配 + 短路優化"""
+        """手動找圖點擊 - 短路優化"""
         # 執行緒安全：取得參考（不複製）
         with self._lock:
-            templates_gray = self.templates_gray  # 只讀，不需複製
+            templates = self.templates
+            templates_gray = self.templates_gray
+            use_color = self.use_color_match
             threshold = self.similarity_threshold
 
-        if not templates_gray:
+        if not templates:
             return
 
         try:
             with mss.mss() as sct:
                 monitor = sct.monitors[0]
                 screen = np.array(sct.grab(monitor))
-                screen_gray = cv2.cvtColor(screen, cv2.COLOR_BGRA2GRAY)
                 ox, oy = monitor["left"], monitor["top"]
 
-            # 多模板遍歷（灰階 + 短路優化）
-            for template_gray in templates_gray:
-                result = cv2.matchTemplate(screen_gray, template_gray, cv2.TM_CCOEFF_NORMED)
+            # 根據設定選擇匹配模式
+            if use_color:
+                screen_match = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
+                match_templates = templates
+            else:
+                screen_match = cv2.cvtColor(screen, cv2.COLOR_BGRA2GRAY)
+                match_templates = templates_gray
+
+            # 多模板遍歷（短路優化）
+            for template in match_templates:
+                result = cv2.matchTemplate(screen_match, template, cv2.TM_CCOEFF_NORMED)
                 _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
                 if max_val >= threshold:
-                    th, tw = template_gray.shape[:2]
+                    th, tw = template.shape[:2]
                     cx = max_loc[0] + tw // 2 + ox
                     cy = max_loc[1] + th // 2 + oy
 
