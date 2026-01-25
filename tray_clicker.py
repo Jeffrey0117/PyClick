@@ -1827,6 +1827,44 @@ class TrayClicker:
         t = threading.Thread(target=self._auto_loop, daemon=True)
         t.start()
 
+    def _find_all_matches(self, screen_match, template, threshold, ox=0, oy=0):
+        """找出螢幕上所有匹配位置（使用 NMS 避免重複）"""
+        th, tw = template.shape[:2]
+        result = cv2.matchTemplate(screen_match, template, cv2.TM_CCOEFF_NORMED)
+
+        # 找出所有超過閾值的位置
+        locations = np.where(result >= threshold)
+        matches = []
+
+        for pt in zip(*locations[::-1]):  # (x, y) 格式
+            cx = pt[0] + tw // 2 + ox
+            cy = pt[1] + th // 2 + oy
+            score = result[pt[1], pt[0]]
+            matches.append((cx, cy, score))
+
+        if not matches:
+            return []
+
+        # 非極大值抑制 (NMS)：移除重疊的匹配
+        # 按分數排序（高到低）
+        matches.sort(key=lambda x: x[2], reverse=True)
+
+        # 過濾重疊的匹配（距離太近的視為同一個）
+        min_distance = max(tw, th) * 0.8  # 80% 的模板尺寸作為最小間距
+        filtered = []
+
+        for cx, cy, score in matches:
+            is_duplicate = False
+            for fx, fy, _ in filtered:
+                dist = ((cx - fx) ** 2 + (cy - fy) ** 2) ** 0.5
+                if dist < min_distance:
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                filtered.append((cx, cy, score))
+
+        return [(cx, cy) for cx, cy, _ in filtered]
+
     def _execute_action_sequence(self, cx, cy):
         """執行動作序列：多次點擊 + 按鍵（可選輸入鎖定）"""
         # 播放提示音（非同步，不阻塞）
@@ -2003,67 +2041,56 @@ class TrayClicker:
                     screen_match = cv2.cvtColor(screen_bgr, cv2.COLOR_BGR2GRAY)
                     match_templates = templates_gray
 
-                # 多模板遍歷（短路優化：找到就停）
-                found = False
-                for i, template in enumerate(match_templates):
-                    # 彩色模板需要轉換，灰階模板直接用
-                    if use_color:
-                        th, tw = template.shape[:2]
-                    else:
-                        th, tw = template.shape[:2]
-                    max_val = 0
-                    max_loc = None
-                    roi_offset = (0, 0)
+                # 收集所有匹配位置（多模板 + 多位置）
+                all_matches = []
+                for template in match_templates:
+                    matches = self._find_all_matches(screen_match, template, threshold, ox, oy)
+                    all_matches.extend(matches)
 
-                    # ROI 優化：先在上次位置附近搜尋
-                    if last_match_pos and self._roi_miss_count < self._roi_max_miss:
-                        lx, ly = last_match_pos
-                        roi_x1 = max(0, lx - ox - self._roi_margin)
-                        roi_y1 = max(0, ly - oy - self._roi_margin)
-                        roi_x2 = min(screen_w, lx - ox + tw + self._roi_margin)
-                        roi_y2 = min(screen_h, ly - oy + th + self._roi_margin)
+                # 去除重複位置（不同模板可能匹配到同一處）
+                if len(all_matches) > 1:
+                    unique_matches = []
+                    min_dist = 50  # 50像素內視為同一位置
+                    for cx, cy in all_matches:
+                        is_dup = False
+                        for ux, uy in unique_matches:
+                            if ((cx - ux) ** 2 + (cy - uy) ** 2) ** 0.5 < min_dist:
+                                is_dup = True
+                                break
+                        if not is_dup:
+                            unique_matches.append((cx, cy))
+                    all_matches = unique_matches
 
-                        if roi_x2 - roi_x1 >= tw and roi_y2 - roi_y1 >= th:
-                            roi = screen_match[roi_y1:roi_y2, roi_x1:roi_x2]
-                            result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
-                            _, max_val, _, max_loc = cv2.minMaxLoc(result)
-                            roi_offset = (roi_x1, roi_y1)
+                found = len(all_matches) > 0
 
-                    # ROI 沒找到，全螢幕搜尋
-                    if max_val < threshold:
-                        result = cv2.matchTemplate(screen_match, template, cv2.TM_CCOEFF_NORMED)
-                        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-                        roi_offset = (0, 0)
+                if found:
+                    self._roi_miss_count = 0
+                    logger.info(f"找到 {len(all_matches)} 處匹配")
 
-                    if max_val >= threshold:
-                        self._roi_miss_count = 0
-                        found = True
-
-                        # 計算點擊座標
-                        cx = max_loc[0] + roi_offset[0] + tw // 2 + ox
-                        cy = max_loc[1] + roi_offset[1] + th // 2 + oy
-
+                    # 處理所有匹配位置
+                    for idx, (cx, cy) in enumerate(all_matches):
                         # 更新上次匹配位置
                         with self._lock:
                             self._last_match_pos = (cx, cy)
 
-                        # 檢查冷卻
-                        with self._lock:
-                            cooldown_passed = continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
-
-                        if cooldown_passed:
-                            # 執行動作序列
-                            self._execute_action_sequence(cx, cy)
-
+                        # 檢查冷卻（只對第一個檢查，後續連續處理）
+                        if idx == 0:
                             with self._lock:
-                                self.last_click_time = time.time()
-                                self.last_screen_hash = None
+                                cooldown_passed = continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
+                            if not cooldown_passed:
+                                break
 
-                        # 短路優化：找到就停，不再檢查其他模板
-                        break
+                        # 執行動作序列
+                        self._execute_action_sequence(cx, cy)
 
-                # 沒找到任何模板，更新 ROI miss count
-                if not found:
+                        with self._lock:
+                            self.last_click_time = time.time()
+                            self.last_screen_hash = None
+
+                        # 多個匹配時，短暫延遲後處理下一個
+                        if idx < len(all_matches) - 1:
+                            time.sleep(0.15)  # 150ms 間隔
+                else:
                     self._roi_miss_count += 1
 
                 # 釋放大型陣列
@@ -2114,19 +2141,32 @@ class TrayClicker:
                 screen_match = cv2.cvtColor(screen, cv2.COLOR_BGRA2GRAY)
                 match_templates = templates_gray
 
-            # 多模板遍歷（短路優化）
+            # 收集所有匹配位置
+            all_matches = []
             for template in match_templates:
-                result = cv2.matchTemplate(screen_match, template, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, max_loc = cv2.minMaxLoc(result)
+                matches = self._find_all_matches(screen_match, template, threshold, ox, oy)
+                all_matches.extend(matches)
 
-                if max_val >= threshold:
-                    th, tw = template.shape[:2]
-                    cx = max_loc[0] + tw // 2 + ox
-                    cy = max_loc[1] + th // 2 + oy
+            # 去除重複位置
+            if len(all_matches) > 1:
+                unique_matches = []
+                min_dist = 50
+                for cx, cy in all_matches:
+                    is_dup = False
+                    for ux, uy in unique_matches:
+                        if ((cx - ux) ** 2 + (cy - uy) ** 2) ** 0.5 < min_dist:
+                            is_dup = True
+                            break
+                    if not is_dup:
+                        unique_matches.append((cx, cy))
+                all_matches = unique_matches
 
-                    # 執行動作序列
+            if all_matches:
+                logger.info(f"熱鍵: 找到 {len(all_matches)} 處匹配")
+                for idx, (cx, cy) in enumerate(all_matches):
                     self._execute_action_sequence(cx, cy)
-                    break  # 短路：找到就停
+                    if idx < len(all_matches) - 1:
+                        time.sleep(0.15)
 
         except Exception as e:
             logger.error(f"熱鍵點擊錯誤: {e}")
