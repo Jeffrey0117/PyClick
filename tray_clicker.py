@@ -1997,13 +1997,23 @@ class TrayClicker:
                     else:
                         logger.warning("Focus 模式啟用但未設定按鍵，僅切換焦點")
                 else:
-                    # Fallback：對焦失敗，移動游標點擊 + 按鍵
+                    # Fallback：對焦失敗，先恢復乾淨狀態再點擊
                     logger.info("Focus 對焦失敗，fallback 點擊+按鍵 (%d, %d)", cx, cy)
-                    focus_mode = False  # 讓後面計數邏輯正確
+                    focus_mode = False
+                    # 先恢復原始焦點，清除 force_focus 造成的髒狀態
+                    try:
+                        force_focus(original_hwnd)
+                    except Exception:
+                        pass
+                    time.sleep(0.05)
+                    # 跟正常模式一樣：移動游標 → 點擊 → 按鍵
                     user32.SetCursorPos(cx, cy)
                     time.sleep(0.02)
-                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                    for i in range(click_count):
+                        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                        if i < click_count - 1:
+                            time.sleep(click_interval)
                     if after_key:
                         time.sleep(0.1)
                         after_key_count = self.current_script.after_key_count
@@ -2011,6 +2021,7 @@ class TrayClicker:
                             pyautogui.press(after_key.lower())
                             if i < after_key_count - 1:
                                 time.sleep(0.05)
+                        time.sleep(0.15)  # 讓按鍵生效後再進 finally
             else:
                 # 移動到目標位置（只移動一次）
                 user32.SetCursorPos(cx, cy)
