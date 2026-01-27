@@ -1863,7 +1863,7 @@ class TrayClicker:
             if not is_duplicate:
                 filtered.append((cx, cy, score))
 
-        return [(cx, cy) for cx, cy, _ in filtered]
+        return [(int(cx), int(cy)) for cx, cy, _ in filtered]
 
     def _execute_action_sequence(self, cx, cy):
         """執行動作序列：多次點擊 + 按鍵（可選輸入鎖定）"""
