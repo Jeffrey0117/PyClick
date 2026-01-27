@@ -1928,7 +1928,7 @@ class TrayClicker:
 
         return [(int(cx), int(cy)) for cx, cy, _ in filtered]
 
-    def _execute_action_sequence(self, cx, cy):
+    def _execute_action_sequence(self, cx, cy, skip_count=False):
         """執行動作序列：多次點擊 + 按鍵（可選輸入鎖定）"""
         # 播放提示音（非同步，不阻塞）
         if self.sound_enabled:
@@ -2001,8 +2001,9 @@ class TrayClicker:
             # 恢復原本視窗焦點
             force_focus(original_hwnd)
 
-        # 更新計數
-        self.increment_click_count(click_count if not focus_mode else 0)
+        # 更新計數（重試時 skip_count=True 避免重複計算）
+        if not skip_count:
+            self.increment_click_count(click_count if not focus_mode else 0)
 
         # 確認機制：retry_until_gone 啟用時跳過舊的 verify_still_there
         if self.current_script.verify_still_there and not self.current_script.retry_until_gone:
@@ -2078,7 +2079,7 @@ class TrayClicker:
                 logger.info("重試機制: 模板已消失")
                 return
             logger.info(f"重試機制: 模板仍在，重試 {attempt + 1}/{retry_max}")
-            self._execute_action_sequence(cx, cy)
+            self._execute_action_sequence(cx, cy, skip_count=True)
 
         logger.info(f"重試機制: 已達上限 {retry_max} 次，放棄")
 
