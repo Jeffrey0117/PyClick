@@ -227,6 +227,9 @@ class TrayClicker:
         self._roi_margin = 200       # ROI 邊距像素
         self._roi_miss_count = 0     # ROI 連續未找到次數
         self._roi_max_miss = 3       # 超過此次數回退到全螢幕搜尋
+        self._idle_streak = 0        # 連續未找到次數（用於閒置退避）
+        self._suppress_pos = None    # 重試失敗後暫時忽略的位置 (x, y)
+        self._suppress_until = 0     # 忽略到期時間 (timestamp)
 
         # 音效提示
         self.sound_enabled = True
@@ -616,6 +619,24 @@ class TrayClicker:
     def setup_hotkey(self):
         """設定熱鍵"""
         keyboard.add_hotkey(self.hotkey, self.on_hotkey)
+        keyboard.add_hotkey('F7', self.on_stop_hotkey)
+
+    def on_stop_hotkey(self):
+        """F7 停止熱鍵：回到 off 模式"""
+        with self._lock:
+            if self.mode == "off":
+                return
+            self.mode = "off"
+        logger.info("F7 停止熱鍵觸發")
+        self.root.after(0, self._stop_from_hotkey)
+
+    def _stop_from_hotkey(self):
+        """在主執行緒更新 UI"""
+        self.mode_var.set("off")
+        self._update_start_button()
+        self.update_icon()
+        self.status_var.set("已停用（F7）")
+        self._show_panel()
 
     def update_icon(self):
         """更新托盤圖示"""
@@ -1961,14 +1982,38 @@ class TrayClicker:
                 hwnd = get_window_at(cx, cy)
                 force_focus(hwnd)
                 time.sleep(0.1)
-                if after_key:
-                    after_key_count = self.current_script.after_key_count
-                    for i in range(after_key_count):
-                        pyautogui.press(after_key.lower())
-                        if i < after_key_count - 1:
-                            time.sleep(0.05)
+
+                # 驗證是否成功對焦，失敗則 fallback 到普通點擊
+                current_fg = user32.GetForegroundWindow()
+                focus_ok = (current_fg == hwnd)
+
+                if focus_ok:
+                    if after_key:
+                        after_key_count = self.current_script.after_key_count
+                        for i in range(after_key_count):
+                            pyautogui.press(after_key.lower())
+                            if i < after_key_count - 1:
+                                time.sleep(0.05)
+                    else:
+                        logger.warning("Focus 模式啟用但未設定按鍵，僅切換焦點")
                 else:
-                    logger.warning("Focus 模式啟用但未設定按鍵，僅切換焦點")
+                    # Fallback：對焦失敗，改用普通點擊模式
+                    logger.info("Focus 對焦失敗，自動 fallback 到點擊模式")
+                    focus_mode = False  # 讓後面計數邏輯正確
+                    user32.SetCursorPos(cx, cy)
+                    time.sleep(0.02)
+                    for i in range(click_count):
+                        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                        if i < click_count - 1:
+                            time.sleep(click_interval)
+                    if after_key:
+                        time.sleep(0.1)
+                        after_key_count = self.current_script.after_key_count
+                        for i in range(after_key_count):
+                            pyautogui.press(after_key.lower())
+                            if i < after_key_count - 1:
+                                time.sleep(0.05)
             else:
                 # 移動到目標位置（只移動一次）
                 user32.SetCursorPos(cx, cy)
@@ -2081,7 +2126,10 @@ class TrayClicker:
             logger.info(f"重試機制: 模板仍在，重試 {attempt + 1}/{retry_max}")
             self._execute_action_sequence(cx, cy, skip_count=True)
 
-        logger.info(f"重試機制: 已達上限 {retry_max} 次，放棄")
+        logger.info(f"重試機制: 已達上限 {retry_max} 次，暫時跳過此位置 30 秒")
+        with self._lock:
+            self._suppress_pos = (cx, cy)
+            self._suppress_until = time.time() + 30
 
     def _verify_and_press(self):
         """確認機制：等待後檢查圖片是否還在，若在則按鍵"""
@@ -2138,7 +2186,8 @@ class TrayClicker:
             logger.error(f"確認機制錯誤: {e}")
 
     def _auto_loop(self):
-        """自動偵測（不搶焦點）- 動態間隔 + 短路優化"""
+        """自動偵測（不搶焦點）- ROI 優先掃描 + 閒置退避"""
+        self._idle_streak = 0  # 每次啟動自動模式重置
         while self.running:
             # 執行緒安全：讀取共享狀態（不複製模板，只讀參考）
             with self._lock:
@@ -2150,6 +2199,7 @@ class TrayClicker:
                 continuous_click = self.continuous_click
                 last_match_pos = self._last_match_pos
                 threshold = self.similarity_threshold
+                roi_miss_count = self._roi_miss_count
 
             if current_mode != "auto":
                 break
@@ -2167,94 +2217,174 @@ class TrayClicker:
                 continue
 
             try:
-                with mss.mss() as sct:
-                    monitor = sct.monitors[0]
-                    screen = np.array(sct.grab(monitor))
-                    screen_bgr = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
-                    ox, oy = monitor["left"], monitor["top"]
-                    screen_h, screen_w = screen_bgr.shape[:2]
+                # ROI 優先掃描：有上次匹配位置且未超過失敗上限時，只截 ROI 區域
+                use_roi = (last_match_pos is not None
+                           and roi_miss_count < self._roi_max_miss)
 
-                # Hash 比對 (使用內建 hash 更快)
-                small = cv2.resize(screen_bgr, (160, 90))
-                screen_hash = hash(small.tobytes())
-
-                with self._lock:
-                    if screen_hash == self.last_screen_hash:
-                        time.sleep(auto_interval)
-                        continue
-                    self.last_screen_hash = screen_hash
-
-                # 根據設定選擇匹配模式
-                if use_color:
-                    # 彩色匹配：更精準，能區分顏色
-                    screen_match = screen_bgr
-                    match_templates = templates
-                else:
-                    # 灰階匹配：較快但可能誤判顏色
-                    screen_match = cv2.cvtColor(screen_bgr, cv2.COLOR_BGR2GRAY)
-                    match_templates = templates_gray
-
-                # 收集所有匹配位置（多模板 + 多位置）
+                found = False
                 all_matches = []
-                for template in match_templates:
-                    matches = self._find_all_matches(screen_match, template, threshold, ox, oy)
-                    all_matches.extend(matches)
 
-                # 去除重複位置（不同模板可能匹配到同一處）
-                if len(all_matches) > 1:
-                    unique_matches = []
-                    min_dist = 50  # 50像素內視為同一位置
-                    for cx, cy in all_matches:
-                        is_dup = False
-                        for ux, uy in unique_matches:
-                            if ((cx - ux) ** 2 + (cy - uy) ** 2) ** 0.5 < min_dist:
-                                is_dup = True
-                                break
-                        if not is_dup:
-                            unique_matches.append((cx, cy))
-                    all_matches = unique_matches
+                if use_roi:
+                    # --- ROI 掃描（面積約全螢幕 8%，大幅降低 CPU） ---
+                    roi_cx, roi_cy = last_match_pos
+                    margin = self._roi_margin
+                    with mss.mss() as sct:
+                        monitor = sct.monitors[0]
+                        ox, oy = monitor["left"], monitor["top"]
+                        # 將螢幕座標轉為截圖座標
+                        sx = roi_cx - ox
+                        sy = roi_cy - oy
+                        x1 = max(0, sx - margin)
+                        y1 = max(0, sy - margin)
+                        x2 = min(monitor["width"], sx + margin)
+                        y2 = min(monitor["height"], sy + margin)
+                        roi_region = {"left": x1 + ox, "top": y1 + oy,
+                                      "width": x2 - x1, "height": y2 - y1}
+                        screen = np.array(sct.grab(roi_region))
 
-                found = len(all_matches) > 0
+                    screen_bgr = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
+                    roi_ox = roi_region["left"]
+                    roi_oy = roi_region["top"]
+
+                    # ROI 很小，直接做 matchTemplate（跳過 hash 比對）
+                    if use_color:
+                        screen_match = screen_bgr
+                        match_templates = templates
+                    else:
+                        screen_match = cv2.cvtColor(screen_bgr, cv2.COLOR_BGR2GRAY)
+                        match_templates = templates_gray
+
+                    for template in match_templates:
+                        th, tw = template.shape[:2]
+                        if screen_match.shape[0] < th or screen_match.shape[1] < tw:
+                            continue
+                        matches = self._find_all_matches(
+                            screen_match, template, threshold, roi_ox, roi_oy)
+                        all_matches.extend(matches)
+
+                    # 去除重複位置
+                    if len(all_matches) > 1:
+                        unique_matches = []
+                        min_dist = 50
+                        for cx, cy in all_matches:
+                            is_dup = False
+                            for ux, uy in unique_matches:
+                                if ((cx - ux) ** 2 + (cy - uy) ** 2) ** 0.5 < min_dist:
+                                    is_dup = True
+                                    break
+                            if not is_dup:
+                                unique_matches.append((cx, cy))
+                        all_matches = unique_matches
+
+                    found = len(all_matches) > 0
+                    del screen_bgr, screen, screen_match
+
+                else:
+                    # --- 全螢幕掃描（原有邏輯，含 hash 優化） ---
+                    with mss.mss() as sct:
+                        monitor = sct.monitors[0]
+                        screen = np.array(sct.grab(monitor))
+                        screen_bgr = cv2.cvtColor(screen, cv2.COLOR_BGRA2BGR)
+                        ox, oy = monitor["left"], monitor["top"]
+
+                    # Hash 比對 (使用內建 hash 更快)
+                    small = cv2.resize(screen_bgr, (160, 90))
+                    screen_hash = hash(small.tobytes())
+
+                    with self._lock:
+                        if screen_hash == self.last_screen_hash:
+                            time.sleep(auto_interval)
+                            continue
+                        self.last_screen_hash = screen_hash
+
+                    # 根據設定選擇匹配模式
+                    if use_color:
+                        screen_match = screen_bgr
+                        match_templates = templates
+                    else:
+                        screen_match = cv2.cvtColor(screen_bgr, cv2.COLOR_BGR2GRAY)
+                        match_templates = templates_gray
+
+                    # 收集所有匹配位置（多模板 + 多位置）
+                    for template in match_templates:
+                        matches = self._find_all_matches(screen_match, template, threshold, ox, oy)
+                        all_matches.extend(matches)
+
+                    # 去除重複位置（不同模板可能匹配到同一處）
+                    if len(all_matches) > 1:
+                        unique_matches = []
+                        min_dist = 50
+                        for cx, cy in all_matches:
+                            is_dup = False
+                            for ux, uy in unique_matches:
+                                if ((cx - ux) ** 2 + (cy - uy) ** 2) ** 0.5 < min_dist:
+                                    is_dup = True
+                                    break
+                            if not is_dup:
+                                unique_matches.append((cx, cy))
+                        all_matches = unique_matches
+
+                    found = len(all_matches) > 0
+                    del screen_bgr, screen, screen_match
+
+                # --- 過濾被暫時跳過的位置 ---
+                with self._lock:
+                    sup_pos = self._suppress_pos
+                    sup_until = self._suppress_until
+
+                if sup_pos and time.time() < sup_until:
+                    all_matches = [
+                        (cx, cy) for cx, cy in all_matches
+                        if ((cx - sup_pos[0]) ** 2 + (cy - sup_pos[1]) ** 2) ** 0.5 > 80
+                    ]
+                    found = len(all_matches) > 0
+                elif sup_pos:
+                    # 過期了，清除 suppress
+                    with self._lock:
+                        self._suppress_pos = None
+                        self._suppress_until = 0
+
+                # --- 處理匹配結果（ROI 和全螢幕共用） ---
+                with self._lock:
+                    if found:
+                        self._roi_miss_count = 0
+                    else:
+                        self._roi_miss_count += 1
 
                 if found:
-                    self._roi_miss_count = 0
+                    self._idle_streak = 0
                     logger.info(f"找到 {len(all_matches)} 處匹配")
 
-                    # 處理所有匹配位置
                     for idx, (cx, cy) in enumerate(all_matches):
-                        # 更新上次匹配位置
                         with self._lock:
                             self._last_match_pos = (cx, cy)
 
-                        # 檢查冷卻（只對第一個檢查，後續連續處理）
                         if idx == 0:
                             with self._lock:
                                 cooldown_passed = continuous_click or (time.time() - self.last_click_time >= self.click_cooldown)
                             if not cooldown_passed:
                                 break
 
-                        # 執行動作序列（含重試直到消失）
                         self._execute_with_retry(cx, cy)
 
                         with self._lock:
                             self.last_click_time = time.time()
                             self.last_screen_hash = None
 
-                        # 多個匹配時，短暫延遲後處理下一個
                         if idx < len(all_matches) - 1:
-                            time.sleep(0.15)  # 150ms 間隔
+                            time.sleep(0.15)
                 else:
-                    self._roi_miss_count += 1
+                    self._idle_streak += 1
 
-                # 釋放大型陣列
-                del screen_bgr, screen, screen_match
-
-                # 動態間隔：找到時快速掃描，沒找到時放慢
-                sleep_time = auto_interval * 0.5 if found else auto_interval * 1.2
+                # 動態間隔 + 閒置退避
+                if found:
+                    sleep_time = auto_interval * 0.5
+                else:
+                    backoff = auto_interval * 1.2 * (1 + self._idle_streak * 0.3)
+                    sleep_time = min(backoff, 3.0)
                 time.sleep(sleep_time)
 
             except Exception as e:
-                # 記錄錯誤但不中斷
                 logger.error(f"自動模式錯誤: {e}")
                 time.sleep(auto_interval)
 
