@@ -1997,13 +1997,20 @@ class TrayClicker:
                     else:
                         logger.warning("Focus 模式啟用但未設定按鍵，僅切換焦點")
                 else:
-                    # Fallback：對焦失敗，改用點擊代替（點擊本身已取代 focus+按鍵）
-                    logger.info("Focus 對焦失敗，fallback 點擊 (%d, %d)", cx, cy)
+                    # Fallback：對焦失敗，移動游標點擊 + 按鍵
+                    logger.info("Focus 對焦失敗，fallback 點擊+按鍵 (%d, %d)", cx, cy)
                     focus_mode = False  # 讓後面計數邏輯正確
                     user32.SetCursorPos(cx, cy)
                     time.sleep(0.02)
                     user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
                     user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                    if after_key:
+                        time.sleep(0.1)
+                        after_key_count = self.current_script.after_key_count
+                        for i in range(after_key_count):
+                            pyautogui.press(after_key.lower())
+                            if i < after_key_count - 1:
+                                time.sleep(0.05)
             else:
                 # 移動到目標位置（只移動一次）
                 user32.SetCursorPos(cx, cy)
@@ -2031,10 +2038,17 @@ class TrayClicker:
                 user32.BlockInput(False)
 
             # 游標回原位
-            user32.SetCursorPos(original_pos[0], original_pos[1])
+            try:
+                user32.SetCursorPos(original_pos[0], original_pos[1])
+            except Exception:
+                pass
 
-            # 恢復原本視窗焦點
-            force_focus(original_hwnd)
+            # 恢復原本視窗焦點（失敗不阻塞）
+            try:
+                if original_hwnd:
+                    force_focus(original_hwnd)
+            except Exception:
+                pass
 
         # 更新計數（重試時 skip_count=True 避免重複計算）
         if not skip_count:
@@ -2370,8 +2384,8 @@ class TrayClicker:
                 if found:
                     sleep_time = auto_interval * 0.5
                 else:
-                    backoff = auto_interval * 1.2 * (1 + self._idle_streak * 0.3)
-                    sleep_time = min(backoff, 3.0)
+                    backoff = auto_interval * (1 + self._idle_streak * 0.15)
+                    sleep_time = min(backoff, auto_interval * 2.5)
                 time.sleep(sleep_time)
 
             except Exception as e:
