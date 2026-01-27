@@ -2019,15 +2019,16 @@ class TrayClicker:
             if self.block_input_enabled:
                 user32.BlockInput(False)
 
-            # 先恢復焦點，再回游標（焦點切換可能移動游標）
+            # 游標回原位
             try:
-                if original_hwnd:
-                    force_focus(original_hwnd)
+                user32.SetCursorPos(int(original_pos[0]), int(original_pos[1]))
             except Exception:
                 pass
 
+            # 只在非自動模式才恢復焦點（自動模式不搶焦點，避免打斷打字）
             try:
-                user32.SetCursorPos(int(original_pos[0]), int(original_pos[1]))
+                if original_hwnd and self.mode != "auto":
+                    force_focus(original_hwnd)
             except Exception:
                 pass
 
