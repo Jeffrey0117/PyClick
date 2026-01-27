@@ -1978,50 +1978,21 @@ class TrayClicker:
                 user32.BlockInput(True)
 
             if focus_mode:
-                # Focus 模式：不點擊，focus 視窗後按鍵
-                hwnd = get_window_at(cx, cy)
-                force_focus(hwnd)
+                # Focus 模式：點擊確保焦點到正確子面板，再按鍵
+                user32.SetCursorPos(cx, cy)
+                time.sleep(0.02)
+                user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
                 time.sleep(0.1)
-
-                # 驗證是否成功對焦，失敗則 fallback 到普通點擊
-                current_fg = user32.GetForegroundWindow()
-                focus_ok = (current_fg == hwnd)
-
-                if focus_ok:
-                    if after_key:
-                        after_key_count = self.current_script.after_key_count
-                        for i in range(after_key_count):
-                            pyautogui.press(after_key.lower())
-                            if i < after_key_count - 1:
-                                time.sleep(0.05)
-                    else:
-                        logger.warning("Focus 模式啟用但未設定按鍵，僅切換焦點")
+                if after_key:
+                    after_key_count = self.current_script.after_key_count
+                    for i in range(after_key_count):
+                        pyautogui.press(after_key.lower())
+                        if i < after_key_count - 1:
+                            time.sleep(0.05)
+                    time.sleep(0.15)
                 else:
-                    # Fallback：對焦失敗，先恢復乾淨狀態再點擊
-                    logger.info("Focus 對焦失敗，fallback 點擊+按鍵 (%d, %d)", cx, cy)
-                    focus_mode = False
-                    # 先恢復原始焦點，清除 force_focus 造成的髒狀態
-                    try:
-                        force_focus(original_hwnd)
-                    except Exception:
-                        pass
-                    time.sleep(0.05)
-                    # 跟正常模式一樣：移動游標 → 點擊 → 按鍵
-                    user32.SetCursorPos(cx, cy)
-                    time.sleep(0.02)
-                    for i in range(click_count):
-                        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                        if i < click_count - 1:
-                            time.sleep(click_interval)
-                    if after_key:
-                        time.sleep(0.1)
-                        after_key_count = self.current_script.after_key_count
-                        for i in range(after_key_count):
-                            pyautogui.press(after_key.lower())
-                            if i < after_key_count - 1:
-                                time.sleep(0.05)
-                        time.sleep(0.15)  # 讓按鍵生效後再進 finally
+                    logger.warning("Focus 模式啟用但未設定按鍵，僅點擊")
             else:
                 # 移動到目標位置（只移動一次）
                 user32.SetCursorPos(cx, cy)
