@@ -33,7 +33,7 @@ __version__ = "1.2.0"
 GITHUB_REPO = "Jeffrey0117/PyClick"
 
 from utils import (
-    force_focus, click_no_focus, check_single_instance,
+    force_focus, click_no_focus, check_single_instance, get_window_at,
     user32, kernel32, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP
 )
 
@@ -95,6 +95,11 @@ class SimpleScript:
         self.verify_still_there = False  # 是否啟用確認機制
         self.verify_delay = 0.5          # 確認延遲（秒）
         self.verify_key = "enter"        # 如果還在的話按什麼鍵
+        # Focus 模式：不點擊，focus 視窗後按鍵
+        self.focus_mode = False
+        # 重試直到消失
+        self.retry_until_gone = False
+        self.retry_max = 3
         # 新增：掃描設定
         self.auto_interval = 0.5     # 掃描間隔（秒）
         self.threshold = 0.7         # 相似度門檻
@@ -126,6 +131,10 @@ class SimpleScript:
             "verify_still_there": self.verify_still_there,
             "verify_delay": self.verify_delay,
             "verify_key": self.verify_key,
+            # Focus 模式 + 重試直到消失
+            "focus_mode": self.focus_mode,
+            "retry_until_gone": self.retry_until_gone,
+            "retry_max": self.retry_max,
             # 新增：掃描設定
             "auto_interval": self.auto_interval,
             "threshold": self.threshold,
@@ -148,6 +157,10 @@ class SimpleScript:
         script.verify_still_there = data.get("verify_still_there", False)
         script.verify_delay = data.get("verify_delay", 0.5)
         script.verify_key = data.get("verify_key", "enter")
+        # Focus 模式 + 重試直到消失（向後相容）
+        script.focus_mode = data.get("focus_mode", False)
+        script.retry_until_gone = data.get("retry_until_gone", False)
+        script.retry_max = data.get("retry_max", 3)
         # 新增：掃描設定（向後相容：舊腳本沒有這些欄位則用預設值）
         script.auto_interval = data.get("auto_interval", 0.5)
         script.threshold = data.get("threshold", 0.7)
@@ -411,6 +424,29 @@ class TrayClicker:
         verify_key_combo.pack(side="left", padx=2)
         verify_key_combo.bind("<<ComboboxSelected>>", self.on_action_change)
         verify_key_combo.bind("<FocusOut>", self.on_action_change)
+
+        # 第 2.6 排：Focus 模式 + 重試直到消失
+        row2c = ttk.Frame(ctrl_frame)
+        row2c.pack(fill="x", padx=10, pady=2)
+
+        self.focus_mode_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row2c, text="Focus 模式", variable=self.focus_mode_var,
+                        command=self.on_action_change).pack(side="left", padx=5)
+
+        ttk.Separator(row2c, orient="vertical").pack(side="left", fill="y", padx=8)
+
+        self.retry_until_gone_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row2c, text="重試直到消失", variable=self.retry_until_gone_var,
+                        command=self._on_retry_toggle).pack(side="left", padx=5)
+
+        ttk.Label(row2c, text="最多").pack(side="left", padx=2)
+        self.retry_max_var = tk.StringVar(value="3")
+        retry_max_combo = ttk.Combobox(row2c, textvariable=self.retry_max_var, width=4,
+                                        values=["1", "2", "3", "5", "10"])
+        retry_max_combo.pack(side="left", padx=2)
+        retry_max_combo.bind("<<ComboboxSelected>>", self.on_action_change)
+        retry_max_combo.bind("<FocusOut>", self.on_action_change)
+        ttk.Label(row2c, text="次").pack(side="left", padx=2)
 
         # 第三排：模式控制
         row3 = ttk.Frame(ctrl_frame)
@@ -712,6 +748,12 @@ class TrayClicker:
         else:
             self.status_var.set("提示音: 關閉")
 
+    def _on_retry_toggle(self):
+        """重試直到消失切換：與確認機制互斥"""
+        if self.retry_until_gone_var.get():
+            self.verify_var.set(False)
+        self.on_action_change()
+
     def on_action_change(self, event=None):
         """動作設定改變，更新當前腳本"""
         try:
@@ -739,14 +781,30 @@ class TrayClicker:
             self.current_script.verify_delay = 0.5
         self.current_script.verify_key = self.verify_key_var.get()
 
-        action_desc = f"點{self.current_script.click_count}下"
-        if self.current_script.after_key:
+        # Focus 模式 + 重試直到消失
+        self.current_script.focus_mode = self.focus_mode_var.get()
+        self.current_script.retry_until_gone = self.retry_until_gone_var.get()
+        try:
+            val = int(self.retry_max_var.get())
+            self.current_script.retry_max = max(1, min(val, 50))
+        except ValueError:
+            self.current_script.retry_max = 3
+
+        if self.current_script.focus_mode:
+            action_desc = f"[Focus] 按鍵{self.current_script.after_key or 'N/A'}"
             if self.current_script.after_key_count > 1:
-                action_desc += f" → {self.current_script.after_key} x{self.current_script.after_key_count}"
-            else:
-                action_desc += f" → {self.current_script.after_key}"
+                action_desc += f" x{self.current_script.after_key_count}"
+        else:
+            action_desc = f"點{self.current_script.click_count}下"
+            if self.current_script.after_key:
+                if self.current_script.after_key_count > 1:
+                    action_desc += f" → {self.current_script.after_key} x{self.current_script.after_key_count}"
+                else:
+                    action_desc += f" → {self.current_script.after_key}"
         if self.current_script.verify_still_there:
             action_desc += f" → 確認({self.current_script.verify_delay}s後按{self.current_script.verify_key})"
+        if self.current_script.retry_until_gone:
+            action_desc += f" → 重試(最多{self.current_script.retry_max}次)"
 
         # 提示用戶儲存
         if self.current_script.name and self.current_script.name != "未命名":
@@ -818,6 +876,11 @@ class TrayClicker:
         self.verify_var.set(self.current_script.verify_still_there)
         self.verify_delay_var.set(str(self.current_script.verify_delay))
         self.verify_key_var.set(self.current_script.verify_key or "Enter")
+
+        # 載入 Focus 模式 + 重試直到消失
+        self.focus_mode_var.set(self.current_script.focus_mode)
+        self.retry_until_gone_var.set(self.current_script.retry_until_gone)
+        self.retry_max_var.set(str(self.current_script.retry_max))
 
         # 載入掃描設定
         self.auto_interval = self.current_script.auto_interval
@@ -1882,6 +1945,7 @@ class TrayClicker:
         click_count = self.current_script.click_count
         click_interval = self.current_script.click_interval
         after_key = self.current_script.after_key
+        focus_mode = self.current_script.focus_mode
 
         # 儲存原本游標位置和前景視窗
         original_pos = pyautogui.position()
@@ -1892,25 +1956,39 @@ class TrayClicker:
             if self.block_input_enabled:
                 user32.BlockInput(True)
 
-            # 移動到目標位置（只移動一次）
-            user32.SetCursorPos(cx, cy)
-            time.sleep(0.02)
-
-            # 執行多次點擊（不移動游標）
-            for i in range(click_count):
-                user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                if i < click_count - 1:
-                    time.sleep(click_interval)
-
-            # 執行後續按鍵（在目標視窗按）
-            if after_key:
+            if focus_mode:
+                # Focus 模式：不點擊，focus 視窗後按鍵
+                hwnd = get_window_at(cx, cy)
+                force_focus(hwnd)
                 time.sleep(0.1)
-                after_key_count = self.current_script.after_key_count
-                for i in range(after_key_count):
-                    pyautogui.press(after_key.lower())
-                    if i < after_key_count - 1:
-                        time.sleep(0.05)
+                if after_key:
+                    after_key_count = self.current_script.after_key_count
+                    for i in range(after_key_count):
+                        pyautogui.press(after_key.lower())
+                        if i < after_key_count - 1:
+                            time.sleep(0.05)
+                else:
+                    logger.warning("Focus 模式啟用但未設定按鍵，僅切換焦點")
+            else:
+                # 移動到目標位置（只移動一次）
+                user32.SetCursorPos(cx, cy)
+                time.sleep(0.02)
+
+                # 執行多次點擊（不移動游標）
+                for i in range(click_count):
+                    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                    if i < click_count - 1:
+                        time.sleep(click_interval)
+
+                # 執行後續按鍵（在目標視窗按）
+                if after_key:
+                    time.sleep(0.1)
+                    after_key_count = self.current_script.after_key_count
+                    for i in range(after_key_count):
+                        pyautogui.press(after_key.lower())
+                        if i < after_key_count - 1:
+                            time.sleep(0.05)
 
         finally:
             # 保證解鎖（即使出錯也會執行）
@@ -1924,11 +2002,85 @@ class TrayClicker:
             force_focus(original_hwnd)
 
         # 更新計數
-        self.increment_click_count(click_count)
+        self.increment_click_count(click_count if not focus_mode else 0)
 
-        # 確認機制：等待後檢查圖片是否還在，若在則按鍵
-        if self.current_script.verify_still_there:
+        # 確認機制：retry_until_gone 啟用時跳過舊的 verify_still_there
+        if self.current_script.verify_still_there and not self.current_script.retry_until_gone:
             self._verify_and_press()
+
+    def _check_roi_match(self, cx, cy):
+        """ROI 區域模板匹配檢查：只掃描目標位置附近"""
+        with self._lock:
+            templates = self.templates
+            templates_gray = self.templates_gray
+            use_color = self.use_color_match
+            threshold = self.similarity_threshold
+
+        if not templates:
+            return False
+
+        try:
+            margin = self._roi_margin
+            with mss.mss() as sct:
+                monitor = sct.monitors[0]
+                ox, oy = monitor["left"], monitor["top"]
+                # 將螢幕座標轉為截圖座標
+                sx = cx - ox
+                sy = cy - oy
+                # ROI 邊界（確保不超出螢幕）
+                x1 = max(0, sx - margin)
+                y1 = max(0, sy - margin)
+                x2 = min(monitor["width"], sx + margin)
+                y2 = min(monitor["height"], sy + margin)
+
+                roi_region = {"left": x1 + ox, "top": y1 + oy,
+                              "width": x2 - x1, "height": y2 - y1}
+                roi_img = np.array(sct.grab(roi_region))
+
+            if use_color:
+                roi_match = cv2.cvtColor(roi_img, cv2.COLOR_BGRA2BGR)
+                match_templates = templates
+            else:
+                roi_match = cv2.cvtColor(roi_img, cv2.COLOR_BGRA2GRAY)
+                match_templates = templates_gray
+
+            for template in match_templates:
+                th, tw = template.shape[:2]
+                if roi_match.shape[0] < th or roi_match.shape[1] < tw:
+                    continue
+                result = cv2.matchTemplate(roi_match, template, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(result)
+                if max_val >= threshold:
+                    return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"ROI 檢查錯誤: {e}", exc_info=True)
+            return False
+
+    def _execute_with_retry(self, cx, cy):
+        """包裝器：執行動作後，若啟用重試直到消失，則重複檢查並重試"""
+        # 快照腳本參考，避免 UI 切換腳本時產生競態
+        script = self.current_script
+        self._execute_action_sequence(cx, cy)
+
+        if not script.retry_until_gone:
+            return
+
+        retry_max = max(1, script.retry_max)
+        verify_delay = script.verify_delay
+
+        for attempt in range(retry_max):
+            time.sleep(verify_delay)
+            still_there = self._check_roi_match(cx, cy)
+            if not still_there:
+                logger.info("重試機制: 模板已消失")
+                return
+            logger.info(f"重試機制: 模板仍在，重試 {attempt + 1}/{retry_max}")
+            self._execute_action_sequence(cx, cy)
+
+        logger.info(f"重試機制: 已達上限 {retry_max} 次，放棄")
 
     def _verify_and_press(self):
         """確認機制：等待後檢查圖片是否還在，若在則按鍵"""
@@ -2080,8 +2232,8 @@ class TrayClicker:
                             if not cooldown_passed:
                                 break
 
-                        # 執行動作序列
-                        self._execute_action_sequence(cx, cy)
+                        # 執行動作序列（含重試直到消失）
+                        self._execute_with_retry(cx, cy)
 
                         with self._lock:
                             self.last_click_time = time.time()
@@ -2164,7 +2316,7 @@ class TrayClicker:
             if all_matches:
                 logger.info(f"熱鍵: 找到 {len(all_matches)} 處匹配")
                 for idx, (cx, cy) in enumerate(all_matches):
-                    self._execute_action_sequence(cx, cy)
+                    self._execute_with_retry(cx, cy)
                     if idx < len(all_matches) - 1:
                         time.sleep(0.15)
 

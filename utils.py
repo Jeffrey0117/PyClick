@@ -4,6 +4,7 @@ PyClick 共用工具模組
 """
 
 import ctypes
+from ctypes import wintypes
 import time
 import json
 import base64
@@ -13,6 +14,14 @@ import pyautogui
 # Windows API
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
+
+# WindowFromPoint：取得指定座標的視窗 handle
+user32.WindowFromPoint.argtypes = [wintypes.POINT]
+user32.WindowFromPoint.restype = wintypes.HWND
+
+# GetAncestor：取得頂層視窗
+user32.GetAncestor.argtypes = [wintypes.HWND, ctypes.c_uint]
+user32.GetAncestor.restype = wintypes.HWND
 
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
@@ -25,6 +34,16 @@ DEFAULT_CLICK_COOLDOWN = 1.0
 DEFAULT_SCAN_INTERVAL = 0.5
 DEFAULT_HOTKEY = 'f6'
 ROI_MARGIN = 200
+
+
+def get_window_at(x, y):
+    """取得指定座標的頂層視窗 handle"""
+    GA_ROOT = 2
+    hwnd = user32.WindowFromPoint(wintypes.POINT(int(x), int(y)))
+    if hwnd:
+        root = user32.GetAncestor(hwnd, GA_ROOT)
+        return root if root else hwnd
+    return hwnd
 
 
 def force_focus(hwnd):
