@@ -1,9 +1,11 @@
-<h1 align="center">PyClick</h1>
-
-<p align="center">
-  <strong>Windows 智能自動點擊器</strong><br>
-  看到圖 → 點過去 → 按按鍵，就這麼簡單
-</p>
+<div align="center">
+  <img src="logo.png" width="200" alt="PyClick Logo">
+  <h1>PyClick</h1>
+  <p>
+    <strong>Windows 智能自動點擊器</strong><br>
+    看到圖 → 點過去 → 按按鍵，就這麼簡單
+  </p>
+</div>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white">

@@ -216,6 +216,25 @@ class LiteRunner:
 
     def create_icon_image(self):
         """建立托盤圖示"""
+        # 嘗試載入 logo（打包後會在 _MEIPASS 目錄）
+        try:
+            logo_path = get_resource_path("logo.png")
+            if os.path.exists(logo_path):
+                img = Image.open(logo_path).convert('RGBA')
+                img = img.resize((64, 64), Image.Resampling.LANCZOS)
+
+                # 根據模式添加狀態指示器
+                draw = ImageDraw.Draw(img)
+                if self.mode == "auto":
+                    draw.ellipse([44, 44, 60, 60], fill='#4CAF50', outline='#2E7D32', width=2)
+                else:
+                    draw.ellipse([44, 44, 60, 60], fill='#9E9E9E', outline='#616161', width=2)
+
+                return img
+        except Exception:
+            pass
+
+        # 降級方案：簡單圖示
         img = Image.new('RGB', (64, 64), color='white')
         draw = ImageDraw.Draw(img)
 

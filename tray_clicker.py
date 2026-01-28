@@ -574,6 +574,30 @@ class TrayClicker:
 
     def create_icon_image(self):
         """建立托盤圖示"""
+        # 載入 logo 作為基底
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+            if os.path.exists(logo_path):
+                img = Image.open(logo_path).convert('RGBA')
+                img = img.resize((64, 64), Image.Resampling.LANCZOS)
+
+                # 根據模式添加狀態指示器（右下角圓點）
+                draw = ImageDraw.Draw(img)
+                if self.mode == "auto":
+                    # 綠色圓點：自動執行中
+                    draw.ellipse([44, 44, 60, 60], fill='#4CAF50', outline='#2E7D32', width=2)
+                elif self.mode == "hotkey":
+                    # 橙色圓點：熱鍵模式
+                    draw.ellipse([44, 44, 60, 60], fill='#FF9800', outline='#F57C00', width=2)
+                else:
+                    # 灰色圓點：停用
+                    draw.ellipse([44, 44, 60, 60], fill='#9E9E9E', outline='#616161', width=2)
+
+                return img
+        except Exception as e:
+            logger.warning(f"無法載入 logo.png，使用預設圖示: {e}")
+
+        # 降級方案：使用簡單圖示
         img = Image.new('RGB', (64, 64), color='white')
         draw = ImageDraw.Draw(img)
 
