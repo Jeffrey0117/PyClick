@@ -1974,7 +1974,8 @@ class TrayClicker:
 
         try:
             # 鎖定輸入（如果啟用且有管理員權限）
-            if self.block_input_enabled:
+            # 注意：Focus 模式下不鎖定輸入，避免阻擋 pyautogui.press()
+            if self.block_input_enabled and not focus_mode:
                 user32.BlockInput(True)
 
             if focus_mode:
@@ -2016,7 +2017,8 @@ class TrayClicker:
 
         finally:
             # 保證解鎖（即使出錯也會執行）
-            if self.block_input_enabled:
+            # 只有在非 focus 模式時才需要解鎖（因為 focus 模式沒有鎖定）
+            if self.block_input_enabled and not focus_mode:
                 user32.BlockInput(False)
 
             # 游標回原位
