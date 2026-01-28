@@ -630,6 +630,7 @@ class TrayClicker:
             Item('⏸ 停用', self.set_off_mode,
                  checked=lambda item: self.mode == "off"),
             Item('─────────', None, enabled=False),
+            Item('ℹ️ 關於', self.show_about),
             Item('❌ 結束程式', self.quit_app)
         )
 
@@ -1564,6 +1565,85 @@ class TrayClicker:
             self.mode = "off"
         self.mode_var.set("off")
         self.update_icon()
+
+    def show_about(self, icon=None, item=None):
+        """顯示關於對話框"""
+        about_win = tk.Toplevel()
+        about_win.title("關於 PyClick")
+        about_win.geometry("500x600")
+        about_win.resizable(False, False)
+        about_win.transient(self.root if self.root else None)
+
+        # Logo
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+            if os.path.exists(logo_path):
+                logo_img = Image.open(logo_path).resize((120, 120), Image.Resampling.LANCZOS)
+                logo_photo = ImageTk.PhotoImage(logo_img)
+                logo_label = tk.Label(about_win, image=logo_photo)
+                logo_label.image = logo_photo  # 保持引用
+                logo_label.pack(pady=20)
+        except:
+            pass
+
+        # 標題
+        tk.Label(about_win, text="PyClick", font=("Microsoft JhengHei", 24, "bold")).pack()
+        tk.Label(about_win, text=f"版本 {__version__}", font=("", 10), fg="gray").pack(pady=5)
+
+        # 簡介
+        tk.Label(about_win, text="Windows 智能自動點擊器",
+                 font=("Microsoft JhengHei", 12)).pack(pady=10)
+
+        # 描述框
+        desc_frame = ttk.LabelFrame(about_win, text="核心理念", padding=15)
+        desc_frame.pack(fill="both", padx=20, pady=10)
+
+        desc_text = """
+• 簡單直覺：截圖 → 框選 → 設定 → 執行
+• 自動化重複操作：讓程式代替你點擊重複的按鈕
+• 不干擾工作流：後台執行，不搶奪焦點
+• 腳本化管理：儲存多組設定，隨時切換
+        """.strip()
+
+        tk.Label(desc_frame, text=desc_text, font=("", 10),
+                 justify="left", anchor="w").pack(fill="x")
+
+        # 功能框
+        features_frame = ttk.LabelFrame(about_win, text="主要功能", padding=15)
+        features_frame.pack(fill="both", padx=20, pady=10)
+
+        features_text = """
+✓ 圖像辨識：OpenCV 模板匹配
+✓ 多模板支援：一個腳本多個目標
+✓ Focus 模式：多視窗操作
+✓ 不搶焦點：自動恢復原焦點
+✓ 熱鍵觸發：F6 開始/停止，F7 緊急停止
+        """.strip()
+
+        tk.Label(features_frame, text=features_text, font=("", 10),
+                 justify="left", anchor="w").pack(fill="x")
+
+        # 按鈕
+        btn_frame = ttk.Frame(about_win)
+        btn_frame.pack(pady=15)
+
+        ttk.Button(btn_frame, text="GitHub",
+                   command=lambda: webbrowser.open(f"https://github.com/{GITHUB_REPO}"),
+                   width=12).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="關閉",
+                   command=about_win.destroy, width=12).pack(side="left", padx=5)
+
+        # 版權
+        tk.Label(about_win, text="MIT License © 2026 Jeffrey0117",
+                 font=("", 9), fg="gray").pack(pady=10)
+
+        # 居中顯示
+        about_win.update_idletasks()
+        width = about_win.winfo_width()
+        height = about_win.winfo_height()
+        x = (about_win.winfo_screenwidth() // 2) - (width // 2)
+        y = (about_win.winfo_screenheight() // 2) - (height // 2)
+        about_win.geometry(f'{width}x{height}+{x}+{y}')
 
     def _auto_stop_triggered(self):
         """定時停止觸發"""
