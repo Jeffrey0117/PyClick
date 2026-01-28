@@ -2034,9 +2034,12 @@ class TrayClicker:
             try:
                 should_restore = self.mode != "auto"
                 if should_restore and original_hwnd:
+                    logger.debug(f"恢復焦點: mode={self.mode}, hwnd={original_hwnd}")
                     force_focus(original_hwnd)
-            except Exception:
-                pass
+                elif not should_restore:
+                    logger.debug(f"跳過焦點恢復: mode={self.mode} (auto模式)")
+            except Exception as e:
+                logger.warning(f"焦點恢復失敗: {e}")
 
         # 更新計數（重試時 skip_count=True 避免重複計算）
         if not skip_count:

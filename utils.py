@@ -50,15 +50,25 @@ def force_focus(hwnd):
     """強制恢復視窗焦點"""
     if not hwnd:
         return
+
     target_thread = user32.GetWindowThreadProcessId(hwnd, None)
     current_thread = kernel32.GetCurrentThreadId()
-    if target_thread != current_thread:
-        user32.AttachThreadInput(current_thread, target_thread, True)
-    user32.SetForegroundWindow(hwnd)
-    user32.SetFocus(hwnd)
-    user32.SetActiveWindow(hwnd)
-    if target_thread != current_thread:
-        user32.AttachThreadInput(current_thread, target_thread, False)
+    attached = False
+
+    try:
+        # 附加執行緒輸入
+        if target_thread != current_thread:
+            user32.AttachThreadInput(current_thread, target_thread, True)
+            attached = True
+
+        # 恢復焦點（即使失敗也要確保分離）
+        user32.SetForegroundWindow(hwnd)
+        user32.SetFocus(hwnd)
+        user32.SetActiveWindow(hwnd)
+    finally:
+        # 保證分離執行緒輸入（避免殘留）
+        if attached:
+            user32.AttachThreadInput(current_thread, target_thread, False)
 
 
 def click_no_focus(x, y, instant=True):
