@@ -2028,16 +2028,16 @@ class TrayClicker:
                 pass
 
             # 焦點恢復策略：
-            # 只在手動觸發（hotkey/按鈕）時恢復焦點
-            # Auto 模式下不恢復，避免頻繁搶奪焦點干擾用戶打字
-            # (即使是 focus 模式，在 auto 下也不恢復)
+            # 1. Focus 模式：總是恢復（設計目的就是臨時切換焦點）
+            # 2. 非 focus + Manual：恢復焦點
+            # 3. 非 focus + Auto：不恢復（避免干擾打字）
             try:
-                should_restore = self.mode != "auto"
+                should_restore = focus_mode or (self.mode != "auto")
                 if should_restore and original_hwnd:
-                    logger.debug(f"恢復焦點: mode={self.mode}, hwnd={original_hwnd}")
+                    logger.debug(f"恢復焦點: focus_mode={focus_mode}, mode={self.mode}, hwnd={original_hwnd}")
                     force_focus(original_hwnd)
-                elif not should_restore:
-                    logger.debug(f"跳過焦點恢復: mode={self.mode} (auto模式)")
+                else:
+                    logger.debug(f"跳過焦點恢復: focus_mode={focus_mode}, mode={self.mode}")
             except Exception as e:
                 logger.warning(f"焦點恢復失敗: {e}")
 
